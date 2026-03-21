@@ -490,7 +490,7 @@ fun MapScreen(
                 }
 
                 // ✅ Tracking Required Warning (Agents only)
-                if (!uiState.isAdmin && !uiState.isTrackingEnabled) {
+                if (!uiState.isAdmin && !uiState.isTrackingEnabled && !uiState.isLoading) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -519,9 +519,27 @@ fun MapScreen(
                                 color = AppTheme.colors.textSecondary,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = { viewModel.startClockIn() },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AppTheme.colors.primary
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                    Text("Clock In / Start Work", color = Color.White)
+                                }
+                            }
                         }
                     }
                 }
+
 
                 // ✅ TOP UI CONTAINER (MANAGED STACK)
                 // This prevents Search, Filters, and Status badges from overlapping each other.

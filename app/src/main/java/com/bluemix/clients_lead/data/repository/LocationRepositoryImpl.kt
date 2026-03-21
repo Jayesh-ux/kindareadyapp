@@ -129,6 +129,7 @@ data class LocationLogsResponse(
 data class BackendLocationLog(
     val id: String,
     val userId: String,
+    val email: String? = null, // Added for admin clarity
     val latitude: Double,
     val longitude: Double,
     val accuracy: Double? = null,
@@ -154,6 +155,7 @@ fun BackendLocationLog.toLocationLogDto(): LocationLogDto {
     return LocationLogDto(
         id = this.id,
         userId = this.userId,
+        userEmail = this.email, // Map the new field
         latitude = this.latitude,
         longitude = this.longitude,
         accuracy = this.accuracy,

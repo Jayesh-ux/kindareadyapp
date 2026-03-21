@@ -499,6 +499,17 @@ private fun AnimatedLogCard(log: LocationLog, index: Int, viewModel: ActivityVie
                     color = AppTheme.colors.text
                 )
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Show User Email if Admin is viewing all logs
+                    if (viewModel.uiState.collectAsState().value.isAdmin && !log.userEmail.isNullOrBlank()) {
+                        Text(
+                            text = log.userEmail,
+                            style = AppTheme.typography.label3,
+                            color = AppTheme.colors.primary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                    }
+
                     log.accuracy?.let { AccuracyBadge(it) }
 
                     // Battery indicator

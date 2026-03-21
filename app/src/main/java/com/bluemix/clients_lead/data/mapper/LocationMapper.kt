@@ -8,6 +8,7 @@ fun LocationLogDto.toDomain(): LocationLog {
     return LocationLog(
         id = id ?: "",
         userId = userId,
+        userEmail = userEmail, // Map the new field
         latitude = latitude,
         longitude = longitude,
         accuracy = accuracy,

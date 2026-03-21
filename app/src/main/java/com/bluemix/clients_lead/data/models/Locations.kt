@@ -9,6 +9,7 @@ data class LocationLogDto(
     val id: String? = null,
     @SerialName("user_id")
     val userId: String,
+    val userEmail: String? = null,
     val latitude: Double,
     val longitude: Double,
     val accuracy: Double? = null,

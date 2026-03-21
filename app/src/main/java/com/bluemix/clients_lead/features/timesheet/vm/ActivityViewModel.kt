@@ -104,7 +104,7 @@ class ActivityViewModel(
             // 1. Fetch Location Logs
             val logsResult = getLocationLogsByDateRange(queryUserId, today, today)
             if (logsResult is AppResult.Success) {
-                val logs = logsResult.data.sortedBy { it.timestamp }
+                val logs = logsResult.data.sortedByDescending { it.timestamp }
                 val distance = LocationUtils.calculateTotalDistanceKm(logs)
                 val duration = LocationUtils.calculateActiveDurationMinutes(logs)
 
