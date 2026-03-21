@@ -37,7 +37,6 @@ class EndMeeting(
     suspend operator fun invoke(
         meetingId: String,
         comments: String? = null,
-        attachments: List<String>? = null,
         clientStatus: String? = null, // ✅ NEW
         latitude: Double? = null,
         longitude: Double? = null,
@@ -46,7 +45,7 @@ class EndMeeting(
         val request = UpdateMeetingRequest(
             status = "COMPLETED",
             comments = comments,
-            attachments = attachments,
+            attachments = null,
             clientStatus = clientStatus, // ✅ NEW
             latitude = latitude,
             longitude = longitude,

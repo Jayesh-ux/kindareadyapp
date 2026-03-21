@@ -37,8 +37,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Clients_lead"
-        android:usesCleartextTraffic="true">
+        android:theme="@style/Theme.Clients_lead">
         <activity
             android:name=".MainActivity"
             android:enableOnBackInvokedCallback="true"
@@ -69,7 +68,7 @@
             android:foregroundServiceType="location" />
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyDPqsLG43z7Ug8uNL2djrOkHXsMmqLD3Q0" />
+            android:value="${MAPS_API_KEY}" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

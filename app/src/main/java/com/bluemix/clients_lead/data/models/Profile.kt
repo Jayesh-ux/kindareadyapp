@@ -13,23 +13,32 @@ data class ProfileDto(
     @SerialName("email")
     val email: String?,
 
-    @SerialName("full_name")
+    @SerialName("fullName")
     val fullName: String?,
 
     @SerialName("department")
     val department: String?,
 
-    @SerialName("work_hours_start")
+    @SerialName("workHoursStart")
     val workHoursStart: String?,
 
-    @SerialName("work_hours_end")
+    @SerialName("workHoursEnd")
     val workHoursEnd: String?,
 
-    @SerialName("created_at")
+    @SerialName("lastSeen")
+    val lastSeen: String? = null,
+
+    @SerialName("batteryPercentage")
+    val batteryPercentage: Int? = null,
+
+    @SerialName("currentActivity")
+    val currentActivity: String? = null,
+
+    @SerialName("createdAt")
     val createdAt: String,
 
-    @SerialName("updated_at")
-    val updatedAt: String?
+    @SerialName("updatedAt")
+    val updatedAt: String? = null
 )
 
 
@@ -41,21 +50,30 @@ data class ProfileInsertDto(
     @SerialName("email")
     val email: String?,
 
-    @SerialName("full_name")
+    @SerialName("fullName")
     val fullName: String?
 )
 
 @Serializable
 data class ProfileUpdateDto(
-    @SerialName("full_name")
+    @SerialName("fullName")
     val fullName: String?,
 
     @SerialName("department")
     val department: String?,
 
-    @SerialName("work_hours_start")
+    @SerialName("workHoursStart")
     val workHoursStart: String?,
 
-    @SerialName("work_hours_end")
-    val workHoursEnd: String?
+    @SerialName("workHoursEnd")
+    val workHoursEnd: String?,
+
+    @SerialName("lastSeen")
+    val lastSeen: String? = null,
+
+    @SerialName("batteryPercentage")
+    val batteryPercentage: Int? = null,
+
+    @SerialName("currentActivity")
+    val currentActivity: String? = null
 )

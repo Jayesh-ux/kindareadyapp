@@ -9,5 +9,7 @@ data class CreateClientRequest(
     val email: String? = null,
     val address: String? = null,
     val pincode: String? = null,
-    val notes: String? = null
+    val notes: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )

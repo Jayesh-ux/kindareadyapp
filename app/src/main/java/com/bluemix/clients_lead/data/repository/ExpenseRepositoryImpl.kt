@@ -101,6 +101,7 @@ class ExpenseRepositoryImpl(
     ): AppResult<List<TripExpense>> = withContext(Dispatchers.IO) {
         runAppCatching(mapper = { it.toAppError() }) {
             val response = httpClient.get(ApiEndpoints.Expenses.MY_EXPENSES) {
+                parameter("userId", userId) // ✅ ADDED: Pass userId to support 'all' for admins
                 startDate?.let { parameter("startDate", it) }
                 endDate?.let { parameter("endDate", it) }
                 transportMode?.let { parameter("transportMode", it) }

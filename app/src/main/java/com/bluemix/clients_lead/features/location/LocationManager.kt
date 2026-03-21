@@ -101,25 +101,15 @@ class LocationManager(
 
     @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     suspend fun getLastKnownLocation(): Location? {
-        // ✅ Explicit permission check
-        if (!hasLocationPermission()) {
-            Timber.w("Location permission not granted")
-            return null
-        }
-
-        if (!isLocationEnabled()) {
-            Timber.w("Location services disabled")
-            return null
-        }
+        if (!hasLocationPermission()) return null
+        if (!isLocationEnabled()) return null
 
         return try {
-            // ✅ Safe to call now
-            fusedLocationClient.lastLocation.await()
-        } catch (e: SecurityException) {
-            Timber.e(e, "SecurityException getting location")
-            null
+            // First try fresh location (takes ~1-2s)
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
+                ?: fusedLocationClient.lastLocation.await() // Fallback to stale if fresh fails
         } catch (e: Exception) {
-            Timber.e(e, "Error getting location")
+            Timber.e(e, "Error getting fresh/last location")
             null
         }
     }
@@ -131,7 +121,7 @@ class LocationManager(
      * @return Flow of Location objects
      */
     fun trackLocation(
-        interval: Long = 1000L,
+        interval: Long = 10_000L, // 🏃 Production Standard (10s)
         priority: Int = Priority.PRIORITY_HIGH_ACCURACY
     ): Flow<Location> = callbackFlow {
 
@@ -150,14 +140,20 @@ class LocationManager(
             override fun onLocationResult(result: LocationResult) {
                 super.onLocationResult(result)
                 result.locations.lastOrNull()?.let { location ->
-                    trySend(location).isSuccess
+                    // ✅ Requirement 8: GPS Validation - Ignore if accuracy > 50 meters
+                    if (location.accuracy <= 50f) {
+                        trySend(location).isSuccess
+                    } else {
+                        Timber.tag("GPS").w("Ignoring inaccurate location: ${location.accuracy}m")
+                    }
                 }
             }
         }
 
-        val request = LocationRequest.Builder(priority, interval)
-            .setMinUpdateIntervalMillis(interval / 2)
-            .setWaitForAccurateLocation(false)
+        val request = LocationRequest.Builder(priority, 300000L) // 5 minutes interval
+            .setMinUpdateIntervalMillis(120000L) // 2 minutes minimum
+            .setMinUpdateDistanceMeters(100f)  // 🏃 Update ONLY if moved 100m (Battery Saving)
+            .setWaitForAccurateLocation(true) // Wait for accurate location
             .build()
 
         try {

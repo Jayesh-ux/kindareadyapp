@@ -7,6 +7,6 @@ suspend fun <T> safeApiCall(apiCall: suspend () -> T): AppResult<T> {
     return try {
         AppResult.Success(apiCall())
     } catch (e: Exception) {
-        AppResult.Error(AppError.Network(cause = e))  // Wrap in AppError
+        AppResult.Error(e.toAppError())
     }
 }

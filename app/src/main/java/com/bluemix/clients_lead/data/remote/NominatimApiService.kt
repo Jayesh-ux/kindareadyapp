@@ -27,7 +27,7 @@ class NominatimApiService(
      */
     suspend fun searchPlaces(
         query: String,
-        limit: Int = 5
+        limit: Int = 20
     ): List<NominatimSearchResult> {
         Timber.d("🔍 Searching Nominatim: $query")
 

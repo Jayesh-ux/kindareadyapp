@@ -26,4 +26,12 @@ class LocationTrackingManager(
         }
         context.startService(intent)
     }
+
+    fun updateActiveClient(clientId: String?) {
+        val intent = Intent(context, LocationTrackerService::class.java).apply {
+            action = LocationTrackerService.Action.UPDATE_CLIENT.name
+            putExtra(LocationTrackerService.EXTRA_CLIENT_ID, clientId)
+        }
+        context.startService(intent)
+    }
 }

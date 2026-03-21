@@ -15,8 +15,11 @@ class InsertLocationLog(
         latitude: Double,
         longitude: Double,
         accuracy: Double? = null,
-        battery: Int? = null
-    ): AppResult<LocationLog> = repository.insertLocationLog(userId, latitude, longitude, accuracy, battery)
+        battery: Int? = null,
+        clientId: String? = null,
+        markActivity: String? = null,
+        markNotes: String? = null
+    ): AppResult<LocationLog> = repository.insertLocationLog(userId, latitude, longitude, accuracy, battery, clientId, markActivity, markNotes)
 }
 
 /**
@@ -52,4 +55,7 @@ class DeleteOldLocationLogs(
 ) {
     suspend operator fun invoke(olderThanDays: Int): AppResult<Int> =
         repository.deleteOldLogs(olderThanDays)
+
+    suspend fun clearAll(): AppResult<Unit> =
+        repository.clearAllLogs()
 }

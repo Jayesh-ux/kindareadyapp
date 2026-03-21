@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluemix.clients_lead.core.common.utils.AppResult
 import com.bluemix.clients_lead.domain.model.Meeting
+import com.bluemix.clients_lead.domain.model.ProximityResult
 import com.bluemix.clients_lead.domain.usecases.*
 import com.bluemix.clients_lead.features.location.LocationManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,13 +25,29 @@ data class AttachmentInfo(
     val uri: Uri
 )
 
+/**
+ * Reflects the backend PostGIS proximity check result for a meeting start.
+ * Drives the badge shown to the user immediately after tapping "Start Meeting".
+ */
+sealed interface ProximityVerificationState {
+    /** ✅ Agent is within 50m of client. Show green "Verified Meeting" badge. */
+    data class Verified(val distanceMetres: Double) : ProximityVerificationState
+    /** 🟡 Agent started meeting but is too far. Show yellow "Not Verified" badge. */
+    data class OutOfRange(val distanceMetres: Double) : ProximityVerificationState
+    /** ℹ️ First visit — client GPS was just tagged automatically. Show info badge. */
+    object LocationTagged : ProximityVerificationState
+    /** No proximity check was performed (no GPS sent or backend skipped). */
+    object None : ProximityVerificationState
+}
+
 data class MeetingUiState(
     val isLoading: Boolean = false,
     val activeMeeting: Meeting? = null,
     val error: String? = null,
     val uploadProgress: Float = 0f,
     val isUploadingAttachments: Boolean = false,
-    val pendingAttachments: List<AttachmentInfo> = emptyList()
+    val pendingAttachments: List<AttachmentInfo> = emptyList(),
+    val proximityState: ProximityVerificationState = ProximityVerificationState.None  // ✅ NEW
 )
 
 class MeetingViewModel(
@@ -39,6 +56,8 @@ class MeetingViewModel(
     private val getActiveMeetingForClient: GetActiveMeetingForClient,
     private val uploadMeetingAttachment: UploadMeetingAttachment,
     private val getCurrentUserId: GetCurrentUserId,
+    private val insertLocationLog: InsertLocationLog,
+    private val trackingManager: com.bluemix.clients_lead.features.location.LocationTrackingManager,
     private val context: Context
 ) : ViewModel() {
 
@@ -82,11 +101,33 @@ class MeetingViewModel(
             when (val result = startMeeting.invoke(clientId, latitude, longitude, accuracy)) {
                 is AppResult.Success -> {
                     Timber.d("Meeting started successfully: ${result.data.id}")
+
+                    // ✅ Derive the proximity badge state from the backend's proximity field
+                    val proximityState = resolveProximityState(result.data.proximity)
+                    Timber.d("Proximity state: $proximityState (reason: ${result.data.proximity?.reason})")
+
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         activeMeeting = result.data,
+                        proximityState = proximityState,
                         error = null
                     )
+
+                    // ✅ Log activity in LocationLog table
+                    viewModelScope.launch {
+                        val userId = getCurrentUserId() ?: return@launch
+                        insertLocationLog(
+                            userId = userId,
+                            latitude = latitude ?: 0.0,
+                            longitude = longitude ?: 0.0,
+                            accuracy = accuracy,
+                            clientId = clientId,
+                            markActivity = "MEETING_START",
+                            markNotes = "Meeting started with client: $clientId"
+                        )
+                        // ✅ Tell background service about the active client
+                        trackingManager.updateActiveClient(clientId)
+                    }
                 }
                 is AppResult.Error -> {
                     Timber.e(result.error.message, "Failed to start meeting")
@@ -96,6 +137,23 @@ class MeetingViewModel(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Convert the backend ProximityResult to the UI's ProximityVerificationState.
+     * Mirrors the reason-to-badge table in HANDOFF_Android_Kotlin.md.
+     */
+    private fun resolveProximityState(proximity: ProximityResult?): ProximityVerificationState {
+        return when {
+            proximity == null -> ProximityVerificationState.None
+            proximity.verified && proximity.reason == "WithinRange" ->
+                ProximityVerificationState.Verified(proximity.distanceMetres ?: 0.0)
+            proximity.reason == "OutOfRange" ->
+                ProximityVerificationState.OutOfRange(proximity.distanceMetres ?: 0.0)
+            proximity.reason == "ClientLocationUnknown" ->
+                ProximityVerificationState.LocationTagged
+            else -> ProximityVerificationState.None
         }
     }
 
@@ -213,7 +271,6 @@ class MeetingViewModel(
             when (val result = endMeeting.invoke(
                 meetingId = meeting.id,
                 comments = comments,
-                attachments = uploadedIds.ifEmpty { null },
                 clientStatus = clientStatus,
                 latitude = endLatitude,
                 longitude = endLongitude,
@@ -227,6 +284,22 @@ class MeetingViewModel(
                         pendingAttachments = emptyList(),
                         error = null
                     )
+
+                    // ✅ Log activity in LocationLog table
+                    viewModelScope.launch {
+                        val userId = getCurrentUserId() ?: return@launch
+                        insertLocationLog(
+                            userId = userId,
+                            latitude = endLatitude ?: 0.0,
+                            longitude = endLongitude ?: 0.0,
+                            accuracy = endAccuracy,
+                            clientId = meeting.clientId,
+                            markActivity = "MEETING_END",
+                            markNotes = "Meeting ended with status: $clientStatus. Comments: $comments"
+                        )
+                        // ✅ Tell background service to stop tagging this client
+                        trackingManager.updateActiveClient(null)
+                    }
                 }
                 is AppResult.Error -> {
                     Timber.e(result.error.message, "Failed to end meeting")

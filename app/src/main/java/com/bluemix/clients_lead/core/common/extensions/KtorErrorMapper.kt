@@ -33,7 +33,7 @@ suspend fun Throwable.toAppError(): AppError = when (this) {
 
         when (response.status.value) {
             400 -> AppError.Validation(
-                message = errorBody?.error ?: errorBody?.message ?: "Invalid request",
+                message = errorBody?.message ?: errorBody?.error ?: "Invalid request",
                 code = errorBody?.error,
                 cause = this
             )
@@ -53,9 +53,15 @@ suspend fun Throwable.toAppError(): AppError = when (this) {
                 }
             }
 
-            403 -> AppError.Forbidden(cause = this)
+            403 -> AppError.Forbidden(
+                message = errorBody?.message ?: "Account Disabled by Admin",
+                cause = this
+            )
 
-            404 -> AppError.NotFound(cause = this)
+            404 -> AppError.NotFound(
+                message = errorBody?.message ?: "Not found",
+                cause = this
+            )
 
             408 -> AppError.Network(message = "Request timeout", cause = this)
 
@@ -85,7 +91,18 @@ suspend fun Throwable.toAppError(): AppError = when (this) {
     }
 
     // Server errors (5xx)
-    is ServerResponseException -> AppError.ServiceUnavailable(cause = this)
+    is ServerResponseException -> {
+        val errorBody = try {
+            val bodyText = response.bodyAsText()
+            Json { ignoreUnknownKeys = true }.decodeFromString<ApiErrorResponse>(bodyText)
+        } catch (e: Exception) {
+            null
+        }
+        AppError.ServiceUnavailable(
+            message = errorBody?.message ?: "Server error. Please try again later.",
+            cause = this
+        )
+    }
 
     // Timeout errors
     is HttpRequestTimeoutException -> AppError.Network(

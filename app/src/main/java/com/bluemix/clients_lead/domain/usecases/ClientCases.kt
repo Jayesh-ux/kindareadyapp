@@ -7,8 +7,15 @@ import com.bluemix.clients_lead.domain.repository.IClientRepository
 class GetAllClients(
     private val repository: IClientRepository
 ) {
-    suspend operator fun invoke(userId: String): AppResult<List<Client>> =
-        repository.getAllClients(userId)
+    suspend operator fun invoke(userId: String, page: Int = 1, limit: Int = 50): AppResult<List<Client>> =
+        repository.getAllClients(userId, page, limit)
+}
+
+class GetClientsByStatus(
+    private val repository: IClientRepository
+) {
+    suspend operator fun invoke(userId: String, status: String, page: Int = 1, limit: Int = 50): AppResult<List<Client>> =
+        repository.getClientsByStatus(userId, status, page, limit)
 }
 
 class GetClientById(
@@ -21,8 +28,8 @@ class GetClientById(
 class GetClientsWithLocation(
     private val repository: IClientRepository
 ) {
-    suspend operator fun invoke(userId: String): AppResult<List<Client>> =
-        repository.getClientsWithLocation(userId)
+    suspend operator fun invoke(userId: String, isAdmin: Boolean = false): AppResult<com.bluemix.clients_lead.domain.repository.ClientsResult> =
+        repository.getClientsWithLocation(userId, isAdmin)
 }
 
 class SearchClients(
@@ -54,13 +61,17 @@ class CreateClient(
         email: String?,
         address: String?,
         pincode: String?,
-        notes: String?
+        notes: String?,
+        latitude: Double? = null,
+        longitude: Double? = null
     ): AppResult<Client> = repository.createClient(
         name = name,
         phone = phone,
         email = email,
         address = address,
         pincode = pincode,
-        notes = notes
+        notes = notes,
+        latitude = latitude,
+        longitude = longitude
     )
 }

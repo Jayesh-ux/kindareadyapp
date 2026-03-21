@@ -15,7 +15,11 @@ data class LocationLogDto(
     val timestamp: String? = null,
     @SerialName("created_at")
     val createdAt: String? = null,
-    val battery: Int? = null
+    val battery: Int? = null,
+    val markActivity: String? = null,
+    val markNotes: String? = null,
+    @SerialName("client_id")
+    val clientId: String? = null
 )
 
 @Serializable
@@ -25,5 +29,7 @@ data class LocationLogInsertDto(
     val latitude: Double,
     val longitude: Double,
     val accuracy: Double? = null,
-    val battery: Int? = null
+    val battery: Int? = null,
+    @SerialName("client_id")
+    val clientId: Int? = null
 )

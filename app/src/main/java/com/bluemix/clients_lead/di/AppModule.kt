@@ -1,6 +1,5 @@
 package com.bluemix.clients_lead.di
 
-import android.content.Context
 import com.bluemix.clients_lead.core.common.utils.DefaultDispatchers
 import com.bluemix.clients_lead.core.common.utils.DispatcherProvider
 import com.bluemix.clients_lead.core.network.ApiClientProvider
@@ -8,13 +7,7 @@ import com.bluemix.clients_lead.core.network.ApiEndpoints
 import com.bluemix.clients_lead.core.network.SessionManager
 import com.bluemix.clients_lead.core.network.TokenStorage
 import com.bluemix.clients_lead.domain.repository.AuthRepository
-import com.bluemix.clients_lead.domain.repository.IClientRepository
-import com.bluemix.clients_lead.domain.repository.ILocationRepository
-import com.bluemix.clients_lead.domain.repository.IProfileRepository
 import com.bluemix.clients_lead.data.repository.AuthRepositoryImpl
-import com.bluemix.clients_lead.data.repository.ClientRepositoryImpl
-import com.bluemix.clients_lead.data.repository.LocationRepositoryImpl
-import com.bluemix.clients_lead.data.repository.ProfileRepositoryImpl
 import com.bluemix.clients_lead.domain.usecases.InsertLocationLog
 import com.bluemix.clients_lead.features.auth.vm.SessionViewModel
 import com.bluemix.clients_lead.features.map.vm.MapViewModel
@@ -22,15 +15,20 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 
+/**
+ * AppModule: ONLY app-level singletons that cross all features.
+ * Repository bindings live in their own feature modules (ClientModule, LocationModule, etc.)
+ * to avoid duplicate Koin bindings which cause undefined runtime behavior.
+ */
 val appModule = module {
 
     single<DispatcherProvider> { DefaultDispatchers }
 
-    // Token + Session
+    // Token + Session (shared across all features)
     single { TokenStorage(androidContext()) }
     single { SessionManager(get()) }
 
-    // HttpClient
+    // Shared HttpClient (single instance used by all repositories)
     single {
         ApiClientProvider.create(
             baseUrl = ApiEndpoints.BASE_URL,
@@ -39,30 +37,34 @@ val appModule = module {
         )
     }
 
-    // Repositories
+    // Auth repository (app-level, needed for session restore)
     single<AuthRepository> { AuthRepositoryImpl(get(), get(), get(), androidContext()) }
-    single<IClientRepository> { ClientRepositoryImpl(get()) }
-    single<ILocationRepository> { LocationRepositoryImpl(get()) }
-    single<IProfileRepository> { ProfileRepositoryImpl(get(), androidContext()) }
 
-    // Use cases
+    // Use cases referenced only in appModule-level VMs
     factory { InsertLocationLog(get()) }
 
-    // ViewModels
+    // Session ViewModel
     viewModel {
         SessionViewModel(
             get(), get()
         )
     }
 
-    // Now inject LocationTrackingStateManager as third dependency
+    // Map ViewModel — dependencies provided by clientModule + locationModule + authModule
     viewModel {
         MapViewModel(
-            get(), // GetClientsWithLocation
-            get(), // GetCurrentUserId
-            get(), // LocationTrackingStateManager
-            createQuickVisit = get(),
-            updateClientAddress = get()
+            get(), // GetClientsWithLocation (from clientModule)
+            get(), // GetCurrentUserId (from authModule)
+            get(), // LocationTrackingStateManager (from locationModule)
+            createQuickVisit = get(),     // from clientModule
+            updateClientAddress = get(),   // from clientModule
+            getTeamLocations = get(),      // from clientModule
+            observeAuthState = get(),      // from authModule
+            searchRemoteClients = get(),   // from clientModule (NEW)
+            insertLocationLog = get(),     // ✅ NEW
+            createClient = get(),          // ✅ NEW: For seeding test data
+            signOut = get(),                // ✅ NEW: For logout functionality
+            context = androidContext()
         )
     }
 }

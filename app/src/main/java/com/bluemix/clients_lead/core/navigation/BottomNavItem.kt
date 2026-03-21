@@ -39,5 +39,11 @@ val bottomNavItems = listOf(
         icon = Icons.Outlined.Person,
         selectedIcon = Icons.Filled.Person,
         title = "Profile"
+    ),
+    BottomNavItem(
+        route = Route.AdminDashboard,
+        icon = Icons.Outlined.Dashboard,
+        selectedIcon = Icons.Filled.Dashboard,
+        title = "Admin"
     )
 )

@@ -7,9 +7,10 @@ data class AuthUser(
     val id: String,
     val email: String,
     val token: String,
-    val isTrialUser: Boolean = false,  // ✅ NEW: Indicates if user is on trial (generic email)
-    val companyId: String? = null,     // ✅ NEW: Company ID if assigned
-    val companyName: String? = null    // ✅ NEW: Company name for display
+    val isTrialUser: Boolean = false,
+    val isAdmin: Boolean = false,      // ✅ ADDED
+    val companyId: String? = null,
+    val companyName: String? = null
 )
 
 data class AuthResponse(

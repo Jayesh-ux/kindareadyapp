@@ -30,6 +30,8 @@ val meetingModule = module {
             getActiveMeetingForClient = get(),
             uploadMeetingAttachment = get(),
             getCurrentUserId = get(),
+            insertLocationLog = get(), // ✅ NEW
+            trackingManager = get(),       // ✅ NEW
             context = androidContext()
         )
     }

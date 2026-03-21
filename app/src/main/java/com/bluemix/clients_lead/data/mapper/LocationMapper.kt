@@ -13,7 +13,10 @@ fun LocationLogDto.toDomain(): LocationLog {
         accuracy = accuracy,
         timestamp = timestamp ?: "",
         createdAt = createdAt ?: "",
-        battery = battery?: 0
+        battery = battery,
+        markActivity = markActivity,
+        markNotes = markNotes,
+        clientId = clientId
     )
 }
 

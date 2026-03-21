@@ -13,6 +13,7 @@ data class TripExpense(
     val amountSpent: Double,
     val currency: String = "₹",
     val notes: String?,
+    val isPaid: Boolean = false, // NEW: Payment status
     val receiptImages: List<String>,
     val clientId: String? = null,
     val clientName: String? = null,

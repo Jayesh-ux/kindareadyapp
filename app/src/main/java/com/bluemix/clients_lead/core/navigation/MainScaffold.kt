@@ -36,6 +36,7 @@ import ui.components.Text
 fun MainScaffold(
     currentRoute: Route,
     navigationManager: NavigationManager,
+    isAdmin: Boolean = false,
     content: @Composable () -> Unit
 ) {
     Scaffold(
@@ -44,7 +45,8 @@ fun MainScaffold(
         bottomBar = {
             ModernBottomNavigation(
                 currentRoute = currentRoute,
-                navigationManager = navigationManager
+                navigationManager = navigationManager,
+                isAdmin = isAdmin
             )
         }
     ) { padding ->
@@ -60,7 +62,8 @@ fun MainScaffold(
 @Composable
 private fun ModernBottomNavigation(
     currentRoute: Route,
-    navigationManager: NavigationManager
+    navigationManager: NavigationManager,
+    isAdmin: Boolean
 ) {
     // Top border gradient
     Box(
@@ -87,12 +90,16 @@ private fun ModernBottomNavigation(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            bottomNavItems.forEach { item ->
+            bottomNavItems.filter { 
+                // Filter out Admin tab for non-admins
+                if (it.route == Route.AdminDashboard) isAdmin else true
+            }.forEach { item ->
                 val isSelected = when (currentRoute) {
                     Route.Map -> item.route == Route.Map
                     Route.Clients -> item.route == Route.Clients
                     Route.Activity -> item.route == Route.Activity
                     Route.Profile -> item.route == Route.Profile
+                    Route.AdminDashboard -> item.route == Route.AdminDashboard
                     else -> false
                 }
 

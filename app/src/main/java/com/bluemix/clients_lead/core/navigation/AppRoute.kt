@@ -39,4 +39,26 @@ sealed class Route {
 
     @Serializable
     data object CreateClient : Route()
+
+    // ADMIN DASHBOARD ROUTES
+    @Serializable
+    data object AdminDashboard : Route()
+    
+    @Serializable
+    data class AdminJourneyReports(val agentId: String? = null) : Route()
+
+    @Serializable
+    data object AdminClientServices : Route()
+
+    @Serializable
+    data object AdminTeamActivity : Route()
+
+    @Serializable
+    data object AdminUserManagement : Route()
+
+    @Serializable
+    data object AdminAddService : Route()
+    
+    @Serializable
+    data class AdminAgentDetail(val agentId: String) : Route()
 }

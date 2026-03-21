@@ -58,6 +58,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.util.Base64
 
 // Replace the TripExpenseSheet function in TripExpenseScreen.kt
 
@@ -301,7 +302,7 @@ fun TripExpenseSheet(
                                     elevation = CardDefaults.cardElevation(8.dp)
                                 ) {
                                     Column {
-                                        uiState.searchResults.take(5).forEach { place ->
+                                        uiState.searchResults.take(15).forEach { place ->
                                             LocationSearchResultItem(
                                                 place = place,
                                                 onClick = {
@@ -749,8 +750,21 @@ private fun ReceiptImage(uri: String, onRemove: () -> Unit) {
             .size(80.dp)
             .clip(RoundedCornerShape(12.dp))
     ) {
+        val model: Any? = remember(uri) {
+            when {
+                uri.startsWith("http") -> uri // It's a URL
+                else -> {
+                    try {
+                        Base64.decode(uri, Base64.DEFAULT) // It's Base64
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }
+        }
+
         AsyncImage(
-            model = "data:image/webp;base64,$uri",
+            model = model,
             contentDescription = "Receipt",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop

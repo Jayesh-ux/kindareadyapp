@@ -66,6 +66,41 @@ class NavigationManager(private val navController: NavController) {
     }
 
     /**
+     * Navigate to Admin Journey Reports
+     */
+    fun navigateToAdminJourney(agentId: String? = null) {
+        navController.navigate(Route.AdminJourneyReports(agentId))
+    }
+
+    /**
+     * Navigate to Admin User Management
+     */
+    fun navigateToAdminUsers() {
+        navController.navigate(Route.AdminUserManagement)
+    }
+
+    /**
+     * Navigate to Admin Client Services
+     */
+    fun navigateToAdminClientServices() {
+        navController.navigate(Route.AdminClientServices)
+    }
+
+    /**
+     * Navigate to Admin Add Service
+     */
+    fun navigateToAdminAddService() {
+        navController.navigate(Route.AdminAddService)
+    }
+
+    /**
+     * Navigate to Admin Agent Detail
+     */
+    fun navigateToAgentDetail(agentId: String) {
+        navController.navigate(Route.AdminAgentDetail(agentId))
+    }
+
+    /**
      * Navigate back
      */
     fun navigateBack() {

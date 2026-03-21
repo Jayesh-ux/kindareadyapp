@@ -8,6 +8,9 @@ data class UserProfile(
     val department: String?,
     val workHoursStart: String?,
     val workHoursEnd: String?,
+    val lastSeen: String?, // NEW: Last activity timestamp
+    val batteryPercentage: Int?, // NEW: Agent's battery level
+    val currentActivity: String?, // NEW: e.g., "Walking", "Still"
     val createdAt: String,
     val updatedAt: String?
 )

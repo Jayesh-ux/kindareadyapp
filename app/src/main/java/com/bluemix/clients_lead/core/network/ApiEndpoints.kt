@@ -9,7 +9,7 @@ package com.bluemix.clients_lead.core.network
 //https://backup-server-q2dc.onrender.com
 object ApiEndpoints {
 
-    const val BASE_URL = "https://backup-server-q2dc.onrender.com"
+    val BASE_URL = com.bluemix.clients_lead.BuildConfig.API_BASE_URL
 
     /**
      * Authentication endpoints
@@ -38,11 +38,19 @@ object ApiEndpoints {
         const val CLEAR_PINCODE = "/auth/clear-pincode"
     }
 
+    object Admin {
+        const val TEAM_LOCATIONS = "/admin/team-locations"
+        const val CLIENT_SERVICES = "/admin/client-services"
+        const val DASHBOARD_STATS = "/admin/stats"
+        fun updateUserStatus(userId: String) = "/admin/users/$userId/status"
+    }
+
     /**
      * Location logs endpoints
      */
     object Location {
         const val LOGS = "/location-logs"
+        const val CLEAR_ALL = "/location-logs/clear-all"
     }
 
     /**
@@ -65,12 +73,6 @@ object ApiEndpoints {
 
         // Get active meeting for a specific client
         fun activeMeeting(clientId: String) = "$BASE/active/$clientId"
-
-        // Get all meetings for a user
-        fun userMeetings(userId: String) = "$BASE/user/$userId"
-
-        // Get all meetings for a client
-        fun clientMeetings(clientId: String) = "$BASE/client/$clientId"
 
         // Dynamic route for single meeting
         fun byId(meetingId: String) = "$BASE/$meetingId"

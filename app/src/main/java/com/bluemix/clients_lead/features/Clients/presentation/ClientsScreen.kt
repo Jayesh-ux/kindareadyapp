@@ -280,50 +280,45 @@ fun ClientsScreen(
                     }
                 }
 
-                // Filter Chips (Local mode only)
-                AnimatedVisibility(
-                    visible = uiState.isTrackingEnabled && uiState.searchMode == SearchMode.LOCAL
+                // Filter Chips (Always visible)
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(
-                            items = listOf(
-                                ClientFilter.ALL to "All",
-                                ClientFilter.ACTIVE to "Active",
-                                ClientFilter.INACTIVE to "Inactive",
-                                ClientFilter.COMPLETED to "Completed"
-                            )
-                        ) { (filter, label) ->
-                            AnimatedFilterChip(
-                                label = label,
-                                selected = uiState.selectedFilter == filter,
-                                onClick = { viewModel.setFilter(filter) }
-                            )
-                        }
+                    items(
+                        items = listOf(
+                            ClientFilter.ALL to "All",
+                            ClientFilter.ACTIVE to "Active",
+                            ClientFilter.INACTIVE to "Inactive",
+                            ClientFilter.COMPLETED to "Completed"
+                        )
+                    ) { (filter, label) ->
+                        AnimatedFilterChip(
+                            label = label,
+                            selected = uiState.selectedFilter == filter,
+                            onClick = { viewModel.setFilter(filter) }
+                        )
                     }
                 }
 
-                // ✅ Distance sort toggle (Local mode only)
+                // Sorting Toggle (Always visible if clients exist)
                 AnimatedVisibility(
-                    visible = uiState.isTrackingEnabled &&
-                            uiState.searchMode == SearchMode.LOCAL &&
-                            uiState.filteredClients.isNotEmpty()
+                    visible = uiState.filteredClients.isNotEmpty()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Sort:",
                             style = AppTheme.typography.body2,
-                            color = Color(0xFFB0B0B0)
+                            color = Color(0xFFB0B0B0),
+                            modifier = Modifier.padding(start = 16.dp)
                         )
 
                         Row(
@@ -391,7 +386,7 @@ fun ClientsScreen(
                 }
             }
 
-            if (!uiState.isTrackingEnabled) {
+            if (!uiState.isTrackingEnabled && !uiState.isAdmin) {
                 TrackingRequiredOverlay(
                     modifier = Modifier.fillMaxSize(),
                     onEnableTracking = { viewModel.enableTracking() },

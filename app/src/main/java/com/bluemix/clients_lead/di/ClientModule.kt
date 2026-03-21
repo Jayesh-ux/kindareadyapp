@@ -48,6 +48,11 @@ val clientModule = module {
     }
     factory { UpdateClientAddress(repository = get()) }
     factory { CreateClient(repository = get()) }
+    factory { GetTeamLocations(repository = get()) }
+    factory { UpdateUserStatus(repository = get()) }
+    factory { GetClientServices(repository = get()) }
+    factory { AddClientService(repository = get()) }
+    factory { AcceptClientService(repository = get()) }
     factory { OCRRepository() }
 
     // ViewModels
@@ -60,8 +65,8 @@ val clientModule = module {
             locationTrackingStateManager = get(),
             context = get(),
             createClient = get(),
-            sessionManager = get()
-            // ✅ NEW: Inject application context,
+            sessionManager = get(),
+            observeAuthState = get() // ✅ NEW
         )
     }
 

@@ -50,9 +50,10 @@ class AuthRepositoryImpl(
                 id = response.user.id,
                 email = response.user.email,
                 token = response.token,
-                isTrialUser = response.user.isTrialUser ?: false,  // ✅ NEW
-                companyId = response.user.companyId,                // ✅ NEW
-                companyName = response.user.companyName             // ✅ NEW
+                isTrialUser = response.user.isTrialUser ?: false,
+                isAdmin = response.user.isAdmin ?: false,          // ✅ ADDED
+                companyId = response.user.companyId,
+                companyName = response.user.companyName
             )
             // ✅ CLEAR DEVICE TRIAL STATE IF COMPANY USER (AUTO-LOGIN FIX)
             TrialManager(context).clearTrialIfCompanyUser(authUser.isTrialUser)
@@ -87,9 +88,10 @@ class AuthRepositoryImpl(
                 id = response.user.id,
                 email = response.user.email,
                 token = response.token,
-                isTrialUser = response.user.isTrialUser ?: true,   // ✅ Default to trial if not specified
-                companyId = response.user.companyId,                // ✅ NEW
-                companyName = response.user.companyName             // ✅ NEW
+                isTrialUser = response.user.isTrialUser ?: true,
+                isAdmin = response.user.isAdmin ?: false,          // ✅ ADDED
+                companyId = response.user.companyId,
+                companyName = response.user.companyName
             )
 
             // Update session with user info
@@ -131,9 +133,10 @@ class AuthRepositoryImpl(
                     id = response.user.id,
                     email = response.user.email,
                     token = token,
-                    isTrialUser = response.user.isTrialUser ?: false,  // ✅ NEW
-                    companyId = response.user.companyId,                // ✅ NEW
-                    companyName = response.user.companyName             // ✅ NEW
+                    isTrialUser = response.user.isTrialUser ?: false,
+                    isAdmin = response.user.isAdmin ?: false,          // ✅ ADDED
+                    companyId = response.user.companyId,
+                    companyName = response.user.companyName
                 )
 
                 sessionManager.setUser(authUser)
@@ -208,9 +211,10 @@ data class UserData(
     val department: String? = null,
     val workHoursStart: String? = null,
     val workHoursEnd: String? = null,
-    val isTrialUser: Boolean? = null,      // ✅ NEW
-    val companyId: String? = null,          // ✅ NEW
-    val companyName: String? = null         // ✅ NEW
+    val isTrialUser: Boolean? = null,
+    val isAdmin: Boolean? = null,          // ✅ ADDED
+    val companyId: String? = null,
+    val companyName: String? = null
 )
 
 @Serializable
@@ -219,9 +223,10 @@ data class UserDataWithProfile(
     val email: String,
     val profile: ProfileData? = null,
     val createdAt: String? = null,
-    val isTrialUser: Boolean? = null,      // ✅ NEW
-    val companyId: String? = null,          // ✅ NEW
-    val companyName: String? = null         // ✅ NEW
+    val isTrialUser: Boolean? = null,
+    val isAdmin: Boolean? = null,          // ✅ ADDED
+    val companyId: String? = null,
+    val companyName: String? = null
 )
 
 @Serializable

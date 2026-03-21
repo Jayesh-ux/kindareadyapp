@@ -129,6 +129,10 @@ class LocationTrackingStateManager(
         }
     }
 
+    fun updateActiveClient(clientId: String?) {
+        trackingManager.updateActiveClient(clientId)
+    }
+
     fun updateTrackingState() {
         val running = isServiceRunning(LocationTrackerService::class.java)
         Timber.tag(TAG).d("Tracking state refreshed from system. isRunning = $running")

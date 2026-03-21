@@ -13,18 +13,18 @@ android {
     namespace = "com.bluemix.clients_lead"
     compileSdk = 36
 
+    // Secrets
+    val secretsFile = rootProject.file("local.properties")
+    val secrets = Properties().apply { if (secretsFile.exists()) load(secretsFile.inputStream()) }
+
     defaultConfig {
         applicationId = "com.bluemix.clients_lead"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        // Secrets
-        val secretsFile = rootProject.file("local.properties")
-        val secrets = Properties().apply { if (secretsFile.exists()) load(secretsFile.inputStream()) }
 
         val supabaseUrl = secrets.getProperty("SUPABASE_URL")
             ?: System.getenv("SUPABASE_URL")
@@ -32,9 +32,27 @@ android {
         val supabaseKey = secrets.getProperty("SUPABASE_ANON_KEY")
             ?: System.getenv("SUPABASE_ANON_KEY")
             ?: ""
+        val mapsApiKey = secrets.getProperty("MAPS_API_KEY")
+            ?: System.getenv("MAPS_API_KEY")
+            ?: "MISSING_API_KEY"
+        val apiBaseUrl = secrets.getProperty("API_BASE_URL")
+            ?: System.getenv("API_BASE_URL")
+            ?: "https://geotrack-backend-f66i.onrender.com"
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(secrets.getProperty("RELEASE_KEYSTORE_PATH") ?: "release.keystore")
+            storePassword = secrets.getProperty("RELEASE_KEYSTORE_PASSWORD") ?: ""
+            keyAlias = secrets.getProperty("RELEASE_KEY_ALIAS") ?: ""
+            keyPassword = secrets.getProperty("RELEASE_KEY_PASSWORD") ?: ""
+        }
     }
 
     buildTypes {
@@ -43,7 +61,9 @@ android {
             // manifestPlaceholders["usesCleartext"] = "true"
         }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -123,8 +143,8 @@ dependencies {
     implementation("com.google.maps.android:places-ktx:3.1.0")
     implementation("com.google.android.libraries.places:places:3.3.0")
 
-    // Material Icons Extended (if not included)
-    implementation("androidx.compose.material:material-icons-extended:1.5.4")
+    // Material Icons Extended — version managed by BOM above (line 101)
+    // Removed duplicate explicit 1.5.4 version that was causing a conflict
 
     // ❌ REMOVE THIS - You have it duplicated below
     // implementation("io.coil-kt:coil-compose:2.4.0")

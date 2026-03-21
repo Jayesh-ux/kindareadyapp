@@ -149,6 +149,9 @@ data class BackendUserProfile(
     val department: String? = null,
     val workHoursStart: String? = null,
     val workHoursEnd: String? = null,
+    val lastSeen: String? = null,
+    val batteryPercentage: Int? = null,
+    val currentActivity: String? = null,
     val createdAt: String? = null
 )
 
@@ -160,7 +163,10 @@ data class BackendProfileData(
     val fullName: String? = null,
     val department: String? = null,
     val workHoursStart: String? = null,
-    val workHoursEnd: String? = null
+    val workHoursEnd: String? = null,
+    val lastSeen: String? = null,
+    val batteryPercentage: Int? = null,
+    val currentActivity: String? = null
 )
 
 // ==================== Mapping Functions ====================
@@ -176,6 +182,9 @@ fun BackendUserProfile.toProfileDto(): ProfileDto {
         department = this.department,
         workHoursStart = this.workHoursStart,
         workHoursEnd = this.workHoursEnd,
+        lastSeen = this.lastSeen,
+        batteryPercentage = this.batteryPercentage,
+        currentActivity = this.currentActivity,
         createdAt = this.createdAt ?: "",
         updatedAt = null
     )
@@ -192,6 +201,9 @@ fun BackendProfileData.toProfileDto(): ProfileDto {
         department = this.department,
         workHoursStart = this.workHoursStart,
         workHoursEnd = this.workHoursEnd,
+        lastSeen = this.lastSeen,
+        batteryPercentage = this.batteryPercentage,
+        currentActivity = this.currentActivity,
         createdAt = "", // Add proper timestamp if available
         updatedAt = null
     )

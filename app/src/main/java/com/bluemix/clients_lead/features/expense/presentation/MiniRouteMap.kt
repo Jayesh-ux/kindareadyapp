@@ -79,15 +79,19 @@ private fun MiniMapPreview(
 
     LaunchedEffect(routePolyline) {
         try {
-            val boundsBuilder = LatLngBounds.builder()
-            routePolyline.forEach { boundsBuilder.include(it) }
-            val bounds = boundsBuilder.build()
-
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngBounds(bounds, 50)
-            )
+            if (routePolyline.size <= 1 || distanceKm < 0.1) {
+                // If it's a single point or very short distance, don't use bounds
+                cameraPositionState.position = CameraPosition.fromLatLngZoom(startLocation, 14f)
+            } else {
+                val boundsBuilder = LatLngBounds.builder()
+                routePolyline.forEach { boundsBuilder.include(it) }
+                val bounds = boundsBuilder.build()
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngBounds(bounds, 50)
+                )
+            }
         } catch (e: Exception) {
-            cameraPositionState.position = CameraPosition.fromLatLngZoom(startLocation, 10f)
+            cameraPositionState.position = CameraPosition.fromLatLngZoom(startLocation, 14f)
         }
     }
 
@@ -265,15 +269,18 @@ private fun ExpandedMapDialog(
 
             LaunchedEffect(routePolyline) {
                 try {
-                    val boundsBuilder = LatLngBounds.builder()
-                    routePolyline.forEach { boundsBuilder.include(it) }
-                    val bounds = boundsBuilder.build()
-
-                    cameraPositionState.animate(
-                        CameraUpdateFactory.newLatLngBounds(bounds, 100)
-                    )
+                    if (routePolyline.size <= 1 || distanceKm < 0.1) {
+                        cameraPositionState.position = CameraPosition.fromLatLngZoom(startLocation, 15f)
+                    } else {
+                        val boundsBuilder = LatLngBounds.builder()
+                        routePolyline.forEach { boundsBuilder.include(it) }
+                        val bounds = boundsBuilder.build()
+                        cameraPositionState.animate(
+                            CameraUpdateFactory.newLatLngBounds(bounds, 100)
+                        )
+                    }
                 } catch (e: Exception) {
-                    cameraPositionState.position = CameraPosition.fromLatLngZoom(startLocation, 12f)
+                    cameraPositionState.position = CameraPosition.fromLatLngZoom(startLocation, 15f)
                 }
             }
 

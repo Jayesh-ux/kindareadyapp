@@ -8,5 +8,8 @@ data class LocationLog(
     val accuracy: Double?,
     val timestamp: String,
     val createdAt: String,
-    val battery: Int
+    val battery: Int?,
+    val markActivity: String? = null,
+    val markNotes: String? = null,
+    val clientId: String? = null
 )

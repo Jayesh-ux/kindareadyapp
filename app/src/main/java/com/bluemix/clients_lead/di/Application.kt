@@ -36,7 +36,8 @@ class App : Application() {
                 locationModule,
                 profileModule,
                 expenseModule,
-                meetingModule// ← Added this
+                meetingModule,
+                adminModule
             )
         }
 
@@ -66,25 +67,6 @@ class App : Application() {
 
             // Add more channels here if needed in the future
             // notificationManager.createNotificationChannel(otherChannel)
-        }
-    }
-}
-
-class MyApplication : Application() {
-    override fun onCreate() {
-        super.onCreate()
-
-        startKoin {
-            androidContext(this@MyApplication)
-            modules(
-                appModule,
-                authModule,
-                clientModule,
-                expenseModule,
-                locationModule,
-                profileModule,
-                meetingModule  // ADD THIS
-            )
         }
     }
 }

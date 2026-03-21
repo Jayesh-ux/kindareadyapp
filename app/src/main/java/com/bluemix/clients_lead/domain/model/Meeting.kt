@@ -16,7 +16,20 @@ data class Meeting(
     val attachments: List<String> = emptyList(),
     val location: MeetingLocation?,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val proximity: ProximityResult? = null,
+    val clientName: String? = null,     // ✅ NEW: Read-only display info
+    val clientAddress: String? = null  // ✅ NEW: Read-only display info
+)
+
+/**
+ * Result of the backend PostGIS proximity check on meeting start.
+ * Null when the backend didn't run the check (no GPS sent).
+ */
+data class ProximityResult(
+    val verified: Boolean,
+    val distanceMetres: Double?,
+    val reason: String  // WithinRange | OutOfRange | ClientLocationUnknown | NotChecked | MissingCoordinates
 )
 
 enum class MeetingStatus {

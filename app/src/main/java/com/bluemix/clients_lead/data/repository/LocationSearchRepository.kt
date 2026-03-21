@@ -91,7 +91,7 @@ class LocationSearchRepository(
 
             val results = nominatimApi.searchPlaces(
                 query = query,
-                limit = 5
+                limit = 20
             )
 
             results.map { result ->

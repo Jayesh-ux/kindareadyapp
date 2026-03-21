@@ -26,11 +26,14 @@ import androidx.compose.ui.unit.dp
 import com.bluemix.clients_lead.domain.model.Client
 import com.bluemix.clients_lead.domain.model.Meeting
 import com.bluemix.clients_lead.features.meeting.vm.AttachmentInfo
+import com.bluemix.clients_lead.features.meeting.vm.ProximityVerificationState
 import ui.AppTheme
 import ui.components.Icon
 import ui.components.IconButton
 import ui.components.Text
 import com.bluemix.clients_lead.core.design.ui.components.textfield.OutlinedTextField
+import com.bluemix.clients_lead.features.meeting.utils.ProximityDetector
+import com.google.android.gms.maps.model.LatLng
 import java.time.Duration
 import java.time.Instant
 
@@ -41,10 +44,17 @@ fun MeetingBottomSheet(
     isLoading: Boolean,
     pendingAttachments: List<AttachmentInfo>,
     isUploadingAttachments: Boolean,
+    proximityState: ProximityVerificationState = ProximityVerificationState.None,  // ✅ NEW
+    error: String? = null, // ✅ NEW
+    activeJourneyClientId: String? = null, // ✅ REFINED
+    currentLocation: LatLng? = null, // ✅ REFINED
+    onStartJourney: (String) -> Unit = {}, // ✅ REFINED
+    onStopJourney: () -> Unit = {}, // ✅ REFINED
     onStartMeeting: () -> Unit,
     onEndMeeting: (comments: String, clientStatus: String) -> Unit,
     onAddAttachment: (Uri) -> Unit,
     onRemoveAttachment: (AttachmentInfo) -> Unit,
+    onClearError: () -> Unit = {}, // ✅ NEW
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -63,6 +73,22 @@ fun MeetingBottomSheet(
     }
 
     val canDismiss = activeMeeting == null
+
+    // ✅ REFINED: Proximity Check logic for UI feedback
+    val distanceToClient = remember(currentLocation, client) {
+        if (currentLocation != null && client.latitude != null && client.longitude != null) {
+            ProximityDetector.calculateDistance(
+                currentLocation,
+                LatLng(client.latitude, client.longitude)
+            )
+        } else {
+            null
+        }
+    }
+
+    val isWithinProximity = distanceToClient != null && distanceToClient <= 50.0
+    val isTrackingThisClient = activeJourneyClientId == client.id
+    val isTrackingOtherClient = activeJourneyClientId != null && activeJourneyClientId != client.id
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Dim backdrop
@@ -142,7 +168,41 @@ fun MeetingBottomSheet(
                     }
                 }
 
-                // Warning message
+                // ✅ ERROR BANNER (Strict Rejection Messages)
+                AnimatedVisibility(
+                    visible = error != null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFFF5252).copy(alpha = 0.15f))
+                            .clickable { onClearError() }
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = Color(0xFFFF5252),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = error ?: "An error occurred",
+                                style = AppTheme.typography.body2,
+                                color = Color(0xFFFF5252),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Warning message when meeting is in-progress
                 AnimatedVisibility(
                     visible = activeMeeting != null,
                     enter = expandVertically() + fadeIn(),
@@ -172,6 +232,30 @@ fun MeetingBottomSheet(
                             )
                         }
                     }
+                }
+
+                // ✅ PROXIMITY BADGE — shown after meeting starts
+                AnimatedVisibility(
+                    visible = activeMeeting != null && proximityState !is ProximityVerificationState.None,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    ProximityBadge(state = proximityState)
+                }
+
+                // ✅ REFINED: Journey Controls
+                AnimatedVisibility(
+                    visible = activeMeeting == null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    JourneyControlCard(
+                        isTracking = isTrackingThisClient,
+                        isTrackingOther = isTrackingOtherClient,
+                        distance = distanceToClient,
+                        onStartJourney = { onStartJourney(client.id) },
+                        onStopJourney = onStopJourney
+                    )
                 }
 
                 // CLIENT INFO CARD
@@ -343,6 +427,7 @@ fun MeetingBottomSheet(
                 MeetingActionButton(
                     activeMeeting = activeMeeting,
                     isLoading = isLoading,
+                    isEnabled = isWithinProximity || activeMeeting != null, // ✅ REFINED: Proximity Gate
                     onStartMeeting = onStartMeeting,
                     onEndRequest = { showEndConfirmation = true }
                 )
@@ -478,6 +563,7 @@ private fun ClientInfoCard(client: Client) {
 private fun MeetingActionButton(
     activeMeeting: Meeting?,
     isLoading: Boolean,
+    isEnabled: Boolean = true,
     onStartMeeting: () -> Unit,
     onEndRequest: () -> Unit
 ) {
@@ -492,7 +578,7 @@ private fun MeetingActionButton(
             disabledContainerColor = Color(0xFF404040),
             disabledContentColor = Color(0xFF808080)
         ),
-        enabled = !isLoading
+        enabled = !isLoading && isEnabled
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -820,4 +906,142 @@ private fun formatDuration(d: Duration): String {
         String.format("%d:%02d:%02d", hours, minutes, seconds)
     else
         String.format("%02d:%02d", minutes, seconds)
+}
+
+// ============ PROXIMITY BADGE ============
+
+/**
+ * Displays the PostGIS proximity verification result as a styled banner.
+ *
+ * | State          | Colour | Icon       | Label                          |
+ * |----------------|--------|------------|--------------------------------|
+ * | Verified       | Green  | CheckCircle| ✅ Verified Meeting · Xm away  |
+ * | OutOfRange     | Yellow | Warning    | ⚠️ Not Verified · Xm away      |
+ * | LocationTagged | Blue   | MyLocation | ℹ️ Client location saved        |
+ */
+@Composable
+private fun ProximityBadge(state: ProximityVerificationState) {
+    val (bgColor, iconVector, iconTint, label) = when (state) {
+        is ProximityVerificationState.Verified -> Quad(
+            Color(0xFF1B5E20).copy(alpha = 0.35f),
+            Icons.Default.CheckCircle,
+            Color(0xFF66BB6A),
+            "✅  Verified Meeting · ${state.distanceMetres.toInt()} m away"
+        )
+        is ProximityVerificationState.OutOfRange -> Quad(
+            Color(0xFFF57F17).copy(alpha = 0.25f),
+            Icons.Default.Warning,
+            Color(0xFFFFCA28),
+            "⚠️  Not Verified · ${state.distanceMetres.toInt()} m away"
+        )
+        is ProximityVerificationState.LocationTagged -> Quad(
+            Color(0xFF0D47A1).copy(alpha = 0.35f),
+            Icons.Default.MyLocation,
+            Color(0xFF5E92F3),
+            "ℹ️  Client location saved for future visits"
+        )
+        else -> return  // ProximityVerificationState.None — render nothing
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = iconVector,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = label,
+                style = AppTheme.typography.body2,
+                color = Color.White
+            )
+        }
+    }
+}
+
+/** Tiny utility to destructure 4-tuples from when-expressions. */
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+@Composable
+private fun JourneyControlCard(
+    isTracking: Boolean,
+    isTrackingOther: Boolean,
+    distance: Double?,
+    onStartJourney: () -> Unit,
+    onStopJourney: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isTracking) Color(0xFF1B5E20).copy(alpha = 0.15f) else Color(0xFF0D0D0D))
+            .padding(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = if (isTracking) "Journey in Progress" else "Travel to Client",
+                        style = AppTheme.typography.label2,
+                        color = Color(0xFFB0B0B0)
+                    )
+                    Text(
+                        text = distance?.let { ProximityDetector.formatDistance(it) } ?: "Locating...",
+                        style = AppTheme.typography.h3,
+                        color = if (distance != null && distance <= 50.0) Color(0xFF66BB6A) else Color.White
+                    )
+                }
+            }
+
+            if (isTrackingOther) {
+                Text(
+                    text = "You are tracking another client. Stop that journey first.",
+                    style = AppTheme.typography.body3,
+                    color = Color(0xFFFFCA28)
+                )
+            } else {
+                Button(
+                    onClick = if (isTracking) onStopJourney else onStartJourney,
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isTracking) Color(0xFFEF5350).copy(alpha = 0.8f) else Color(0xFF263238),
+                        contentColor = if (isTracking) Color.White else Color(0xFF5E92F3)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (isTracking) "Stop Journey" else "Start Journey Tracking",
+                        style = AppTheme.typography.button
+                    )
+                }
+            }
+
+            if (distance != null && distance <= 50.0) {
+                Text(
+                    text = "You are within 50m. Start Meeting is now enabled.",
+                    style = AppTheme.typography.body3,
+                    color = Color(0xFF66BB6A)
+                )
+            } else if (distance != null) {
+                Text(
+                    text = "Move within 50m to enable Start Meeting.",
+                    style = AppTheme.typography.body3,
+                    color = Color(0xFF808080)
+                )
+            }
+        }
+    }
 }

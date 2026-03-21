@@ -27,7 +27,10 @@ class LocationRepositoryImpl(
         latitude: Double,
         longitude: Double,
         accuracy: Double?,
-        battery: Int?
+        battery: Int?,
+        clientId: String?,
+        markActivity: String?,
+        markNotes: String?
     ): AppResult<LocationLog> = withContext(Dispatchers.IO) {
         runAppCatching(mapper = { it.toAppError() }) {
             val response = httpClient.post(ApiEndpoints.Location.LOGS) {
@@ -36,7 +39,10 @@ class LocationRepositoryImpl(
                         latitude = latitude,
                         longitude = longitude,
                         accuracy = accuracy,
-                        battery = battery
+                        battery = battery,
+                        clientId = clientId?.toIntOrNull(),
+                        markActivity = markActivity,
+                        markNotes = markNotes
                     )
                 )
             }.body<CreateLocationResponse>()
@@ -52,6 +58,7 @@ class LocationRepositoryImpl(
     ): AppResult<List<LocationLog>> = withContext(Dispatchers.IO) {
         runAppCatching(mapper = { it.toAppError() }) {
             val response = httpClient.get(ApiEndpoints.Location.LOGS) {
+                parameter("userId", userId)
                 parameter("limit", limit)
             }.body<LocationLogsResponse>()
 
@@ -66,6 +73,7 @@ class LocationRepositoryImpl(
     ): AppResult<List<LocationLog>> = withContext(Dispatchers.IO) {
         runAppCatching(mapper = { it.toAppError() }) {
             val response = httpClient.get(ApiEndpoints.Location.LOGS) {
+                parameter("userId", userId)
                 parameter("startDate", startDate)
                 parameter("endDate", endDate)
             }.body<LocationLogsResponse>()
@@ -77,9 +85,15 @@ class LocationRepositoryImpl(
     override suspend fun deleteOldLogs(olderThanDays: Int): AppResult<Int> =
         withContext(Dispatchers.IO) {
             runAppCatching(mapper = { it.toAppError() }) {
-                // Your backend doesn't have delete endpoint yet
-                // Return 0 for now, implement later if needed
                 0
+            }
+        }
+
+    override suspend fun clearAllLogs(): AppResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runAppCatching(mapper = { it.toAppError() }) {
+                httpClient.delete(ApiEndpoints.Location.CLEAR_ALL)
+                Unit
             }
         }
 }
@@ -91,9 +105,10 @@ data class CreateLocationRequest(
     val latitude: Double,
     val longitude: Double,
     val accuracy: Double? = null,
-    val activity: String? = null,
-    val notes: String? = null,
-    val battery: Int? = null
+    val markActivity: String? = null,
+    val markNotes: String? = null,
+    val battery: Int? = null,
+    val clientId: Int? = null  // ✅ NEW: pass when visiting a specific client to cache their GPS
 )
 
 // ==================== Response Models ====================
@@ -117,10 +132,11 @@ data class BackendLocationLog(
     val latitude: Double,
     val longitude: Double,
     val accuracy: Double? = null,
-    val activity: String? = null,
-    val notes: String? = null,
+    val markActivity: String? = null,
+    val markNotes: String? = null,
     val timestamp: String,
-    val battery: Int? = null
+    val battery: Int? = null,
+    val clientId: String? = null
 )
 
 @Serializable
@@ -142,6 +158,9 @@ fun BackendLocationLog.toLocationLogDto(): LocationLogDto {
         longitude = this.longitude,
         accuracy = this.accuracy,
         timestamp = this.timestamp,
-        battery = this.battery
+        battery = this.battery,
+        markActivity = this.markActivity,
+        markNotes = this.markNotes,
+        clientId = this.clientId
     )
 }

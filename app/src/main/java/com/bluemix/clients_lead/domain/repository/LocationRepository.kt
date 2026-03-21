@@ -51,7 +51,10 @@ interface ILocationRepository {
         latitude: Double,
         longitude: Double,
         accuracy: Double? = null,
-        battery: Int? = null
+        battery: Int? = null,
+        clientId: String? = null,
+        markActivity: String? = null,
+        markNotes: String? = null
     ): AppResult<LocationLog>
 
     /**
@@ -75,4 +78,6 @@ interface ILocationRepository {
      * Delete old location logs (for cleanup)
      */
     suspend fun deleteOldLogs(olderThanDays: Int): AppResult<Int>
+
+    suspend fun clearAllLogs(): AppResult<Unit>
 }

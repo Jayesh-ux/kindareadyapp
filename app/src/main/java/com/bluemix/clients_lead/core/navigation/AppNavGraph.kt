@@ -26,6 +26,9 @@ import com.bluemix.clients_lead.features.auth.vm.SessionViewModel
 import com.bluemix.clients_lead.features.map.presentation.MapScreen
 import com.bluemix.clients_lead.features.settings.presentation.ProfileScreen
 import com.bluemix.clients_lead.features.timesheet.presentation.ActivityScreen
+import com.bluemix.clients_lead.features.admin.presentation.AdminDashboardScreen
+import com.bluemix.clients_lead.features.admin.presentation.AdminJourneyScreen
+import com.bluemix.clients_lead.features.admin.presentation.AdminUserManagementScreen
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import com.bluemix.clients_lead.features.*
@@ -42,6 +45,7 @@ fun AppNavHost() {
 
     val sessionVM: SessionViewModel = koinViewModel()
     val session by sessionVM.state.collectAsState()
+    val isAdmin = session.user?.isAdmin ?: false
 
     // ✅ Inject SessionManager to observe invalidation
     val sessionManager: SessionManager = koinInject()
@@ -110,11 +114,15 @@ fun AppNavHost() {
             ) {
                 MainScaffold(
                     currentRoute = Route.Map,
-                    navigationManager = navigationManager
+                    navigationManager = navigationManager,
+                    isAdmin = isAdmin
                 ) {
                     MapScreen(
                         onNavigateToClientDetail = { clientId ->
                             navigationManager.navigateToClientDetail(clientId)
+                        },
+                        onNavigateToAgentDetail = { agentId ->
+                            navigationManager.navigateToAgentDetail(agentId)
                         }
                     )
                 }
@@ -128,7 +136,8 @@ fun AppNavHost() {
             ) {
                 MainScaffold(
                     currentRoute = Route.Clients,
-                    navigationManager = navigationManager
+                    navigationManager = navigationManager,
+                    isAdmin = isAdmin
                 ) {
                     ClientsScreen(
                         onNavigateToDetail = { clientId ->
@@ -149,7 +158,8 @@ fun AppNavHost() {
             ) {
                 MainScaffold(
                     currentRoute = Route.Activity,
-                    navigationManager = navigationManager
+                    navigationManager = navigationManager,
+                    isAdmin = isAdmin
                 ) {
                     ActivityScreen()
                 }
@@ -163,12 +173,71 @@ fun AppNavHost() {
             ) {
                 MainScaffold(
                     currentRoute = Route.Profile,
-                    navigationManager = navigationManager
+                    navigationManager = navigationManager,
+                    isAdmin = isAdmin
                 ) {
                     ProfileScreen(
                         onNavigateToAuth = navigationManager::navigateToAuth
                     )
                 }
+            }
+        }
+
+        composable<Route.AdminDashboard> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                MainScaffold(
+                    currentRoute = Route.AdminDashboard,
+                    navigationManager = navigationManager,
+                    isAdmin = isAdmin
+                ) {
+                    AdminDashboardScreen(
+                        onNavigateToMap = { navigationManager.navigateToTab(Route.Map) },
+                        onNavigateToReports = { agentId -> navigationManager.navigateToAdminJourney(agentId) },
+                        onNavigateToUsers = { navigationManager.navigateToAdminUsers() },
+                        onNavigateToClientServices = { navigationManager.navigateToAdminClientServices() },
+                        onNavigateToAgentDetail = { agentId -> navigationManager.navigateToAgentDetail(agentId) }
+                    )
+                }
+            }
+        }
+
+        composable<Route.AdminJourneyReports> { backStack ->
+            val args = backStack.toRoute<Route.AdminJourneyReports>()
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                AdminJourneyScreen(
+                    agentId = args.agentId,
+                    onNavigateBack = navigationManager::navigateBack
+                )
+            }
+        }
+
+        composable<Route.AdminUserManagement> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                AdminUserManagementScreen(
+                    onNavigateBack = navigationManager::navigateBack,
+                    onNavigateToAgentDetail = { agentId -> navigationManager.navigateToAgentDetail(agentId) }
+                )
+            }
+        }
+
+        composable<Route.AdminClientServices> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                com.bluemix.clients_lead.features.admin.presentation.AdminClientServicesScreen(
+                    onNavigateBack = navigationManager::navigateBack,
+                    onNavigateToAddService = { navigationManager.navigateToAdminAddService() }
+                )
             }
         }
 
@@ -189,6 +258,30 @@ fun AppNavHost() {
                 ClientDetailScreen(
                     clientId = args.clientId,
                     onNavigateBack = navigationManager::navigateBack
+                )
+            }
+        }
+        composable<Route.AdminAddService> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                com.bluemix.clients_lead.features.admin.presentation.AdminAddServiceScreen(
+                    onNavigateBack = navigationManager::navigateBack
+                )
+            }
+        }
+
+        composable<Route.AdminAgentDetail> { backStack ->
+            val args = backStack.toRoute<Route.AdminAgentDetail>()
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                com.bluemix.clients_lead.features.admin.presentation.AdminAgentDetailScreen(
+                    agentId = args.agentId,
+                    onNavigateBack = navigationManager::navigateBack,
+                    onNavigateToReports = { navigationManager.navigateToAdminJourney(it) }
                 )
             }
         }

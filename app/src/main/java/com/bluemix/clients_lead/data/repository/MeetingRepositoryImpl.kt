@@ -6,6 +6,7 @@ import com.bluemix.clients_lead.data.mapper.MeetingMapper
 import com.bluemix.clients_lead.data.models.MeetingDto
 import com.bluemix.clients_lead.domain.model.CreateMeetingRequest
 import com.bluemix.clients_lead.domain.model.Meeting
+import com.bluemix.clients_lead.domain.model.ProximityResult
 import com.bluemix.clients_lead.domain.model.UpdateMeetingRequest
 import com.bluemix.clients_lead.domain.repository.IMeetingRepository
 import io.ktor.client.HttpClient
@@ -14,15 +15,25 @@ import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.request.parameter
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import timber.log.Timber
 
+// ✅ NEW: Proximity result from backend (PostGIS 50m radius check)
+@Serializable
+private data class ProximityResultDto(
+    val verified: Boolean,
+    val distanceMetres: Double? = null,
+    val reason: String
+)
+
 @Serializable
 private data class MeetingResponse(
     val message: String? = null,
-    val meeting: MeetingDto
+    val meeting: MeetingDto,
+    val proximity: ProximityResultDto? = null  // ✅ nullable — safe if backend ever omits it
 )
 
 @Serializable
@@ -71,7 +82,15 @@ class MeetingRepositoryImpl(
                 contentType(ContentType.Application.Json)
                 setBody(request)
             }.body()
-            MeetingMapper.toDomain(response.meeting)
+            // ✅ Map proximity DTO → domain model and attach it to the Meeting
+            val proximityDomain = response.proximity?.let {
+                ProximityResult(
+                    verified = it.verified,
+                    distanceMetres = it.distanceMetres,
+                    reason = it.reason
+                )
+            }
+            MeetingMapper.toDomain(response.meeting, proximityDomain)
         }
 
     override suspend fun endMeeting(
@@ -94,13 +113,19 @@ class MeetingRepositoryImpl(
 
     override suspend fun getUserMeetings(userId: String): AppResult<List<Meeting>> =
         safeApiCall {
-            val response: MeetingListResponse = httpClient.get("/meetings/user/$userId").body()
+            // ✅ BACKEND v3: Path is /meetings, now supports userId='all' for admins
+            val response: MeetingListResponse = httpClient.get("/meetings") {
+                parameter("userId", userId)
+            }.body()
             response.meetings.map { MeetingMapper.toDomain(it) }
         }
 
     override suspend fun getClientMeetings(clientId: String): AppResult<List<Meeting>> =
         safeApiCall {
-            val response: MeetingListResponse = httpClient.get("/meetings/client/$clientId").body()
+            // ✅ BACKEND v2: Use query parameter for client-specific meetings
+            val response: MeetingListResponse = httpClient.get("/meetings") {
+                parameter("clientId", clientId)
+            }.body()
             response.meetings.map { MeetingMapper.toDomain(it) }
         }
 

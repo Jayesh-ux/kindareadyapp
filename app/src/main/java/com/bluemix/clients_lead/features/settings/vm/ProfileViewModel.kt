@@ -31,6 +31,7 @@ data class ProfileUiState(
     val totalSpent: Double = 0.0,
     val showNameDialog: Boolean = false,
     val isUpdatingName: Boolean = false,
+    val isAdmin: Boolean = false,
     val isTrialUser: Boolean = false,
     val companyName: String? = null,
     val trialDaysRemaining: Long = 0,
@@ -71,6 +72,7 @@ class ProfileViewModel(
 
                     _uiState.update {
                         it.copy(
+                            isAdmin = user.isAdmin ?: false,
                             isTrialUser = isTrialUser,
                             companyName = user.companyName,
                             trialDaysRemaining = daysRemaining,

@@ -6,6 +6,7 @@ import com.bluemix.clients_lead.domain.usecases.DeleteOldLocationLogs
 import com.bluemix.clients_lead.domain.usecases.GetLocationLogs
 import com.bluemix.clients_lead.domain.usecases.GetLocationLogsByDateRange
 import com.bluemix.clients_lead.domain.usecases.InsertLocationLog
+import com.bluemix.clients_lead.domain.usecases.GetUserMeetings
 import com.bluemix.clients_lead.features.location.LocationTrackingStateManager
 import com.bluemix.clients_lead.features.location.LocationTrackingManager
 import com.bluemix.clients_lead.features.timesheet.vm.ActivityViewModel
@@ -25,9 +26,8 @@ val locationModule = module {
 
     // Tracking state manager (singleton)
     single { LocationTrackingManager(androidContext()) }
-    single { LocationTrackingStateManager(androidContext(), get()) } // pass small manager
+    single { LocationTrackingStateManager(androidContext(), get()) }
 
-
-    // ViewModel
-    viewModel { ActivityViewModel(get(), get()) }
+    // ViewModel — 8 parameters now
+    viewModel { ActivityViewModel(androidContext(), get(), get(), get(), get(), get(), get(), get()) }
 }

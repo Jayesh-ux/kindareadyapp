@@ -13,6 +13,9 @@ fun ProfileDto.toDomain(): UserProfile {
         department = department,
         workHoursStart = workHoursStart,
         workHoursEnd = workHoursEnd,
+        lastSeen = lastSeen,
+        batteryPercentage = batteryPercentage,
+        currentActivity = currentActivity,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
