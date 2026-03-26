@@ -11,6 +11,7 @@ import com.bluemix.clients_lead.domain.usecases.GetClientsWithLocation
 import com.bluemix.clients_lead.domain.usecases.GetCurrentUserId
 import com.bluemix.clients_lead.domain.usecases.InsertLocationLog
 import com.bluemix.clients_lead.features.location.LocationTrackingStateManager
+import com.bluemix.clients_lead.features.location.BatteryUtils
 import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,7 +50,8 @@ data class MapUiState(
     val activeJourneyClientId: String? = null,
     val showOnlineAgentsOnly: Boolean = false,
     val showHighAccuracyOnly: Boolean = false,
-    val userEmail: String? = null
+    val userEmail: String? = null,
+    val selectedAgentJourney: List<LocationLog> = emptyList() // ✅ NEW: For "Whole Day" overlay
 )
 class MapViewModel(
     private val getClientsWithLocation: GetClientsWithLocation,
@@ -61,10 +63,11 @@ class MapViewModel(
     private val getTeamLocations: GetTeamLocations,
     private val observeAuthState: ObserveAuthState,
     private val searchRemoteClients: SearchRemoteClients,
-    private val insertLocationLog: InsertLocationLog,
+    private val insertLocationLogUseCase: InsertLocationLog,
     private val createClient: CreateClient,
     private val signOut: com.bluemix.clients_lead.domain.usecases.SignOut,
-    private val context: Context
+    private val context: Context,
+    private val getLocationLogsByDateRange: com.bluemix.clients_lead.domain.usecases.GetLocationLogsByDateRange // ✅ NEW
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
@@ -118,10 +121,11 @@ class MapViewModel(
                 _uiState.value.currentLocation?.let { loc ->
                     getCurrentUserId()?.let { userId ->
                         val email = _uiState.value.userEmail ?: "Unknown"
-                        insertLocationLog(
+                        insertLocationLogUseCase(
                             userId = userId,
                             latitude = loc.latitude,
                             longitude = loc.longitude,
+                            battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
                             markActivity = "CLOCK_IN",
                             markNotes = "Agent ($email) started work session"
                         )
@@ -141,10 +145,11 @@ class MapViewModel(
                 _uiState.value.currentLocation?.let { loc ->
                     getCurrentUserId()?.let { userId ->
                         val email = _uiState.value.userEmail ?: "Unknown"
-                        insertLocationLog(
+                        insertLocationLogUseCase(
                             userId = userId,
                             latitude = loc.latitude,
                             longitude = loc.longitude,
+                            battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
                             markActivity = "CLOCK_OUT",
                             markNotes = "Agent ($email) ended work session"
                         )
@@ -162,7 +167,11 @@ class MapViewModel(
         teamRefreshJob = viewModelScope.launch {
             while (true) {
                 refreshTeamLocations()
-                delay(30000)
+                // S13: Adaptive polling — faster when agents are active, slower when idle
+                val onlineCount = _uiState.value.onlineAgentsCount
+                val intervalMs = if (onlineCount > 0) 15_000L else 60_000L
+                Timber.d("📡 Team poll interval: ${intervalMs / 1000}s (${onlineCount} online agents)")
+                delay(intervalMs)
             }
         }
     }
@@ -181,6 +190,11 @@ class MapViewModel(
                             a.latitude != null && com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(a.timestamp)
                         }
                     ) }
+                    
+                    // ✅ NEW: Refresh journey if an agent is selected
+                    _uiState.value.selectedAgent?.let { agent ->
+                        fetchSelectedAgentJourney(agent.id)
+                    }
                 }
                 is AppResult.Error -> {
                     Timber.e("Failed to refresh team locations: ${result.error.message}")
@@ -277,7 +291,7 @@ class MapViewModel(
             }
         }
     }
-    fun startJourney(clientId: String) {
+    fun startJourney(clientId: String, transportMode: String = "Car") {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
@@ -291,22 +305,31 @@ class MapViewModel(
                     isLoading = false,
                     error = null
                 ) }
-                // Log journey start
+                // Log journey start with client name and mode
                 val userId = getCurrentUserId() ?: return@launch
+                val client = _uiState.value.clients.find { it.id == clientId }
+                val clientName = client?.name ?: clientId
+                
                 _uiState.value.currentLocation?.let { loc ->
-                    insertLocationLog(
+                    insertLocationLogUseCase(
                         userId = userId,
                         latitude = loc.latitude,
                         longitude = loc.longitude,
                         accuracy = _uiState.value.currentLocationAccuracy?.toDouble(),
+                        battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
                         clientId = clientId,
                         markActivity = "JOURNEY_START",
-                        markNotes = "Agent started journey to client: $clientId"
+                        markNotes = "Agent started journey to $clientName via $transportMode"
                     )
                 }
-                // Update backend tracker service about the target client
-                locationTrackingStateManager.startTracking() // Ensure it's active
-                locationTrackingStateManager.updateActiveClient(clientId)
+                // Tell background service about the active client with coordinates and mode
+                locationTrackingStateManager.updateActiveClient(
+                    clientId = clientId,
+                    clientName = clientName,
+                    transportMode = transportMode,
+                    latitude = client?.latitude,
+                    longitude = client?.longitude
+                )
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "Failed to start journey: ${e.message}") }
             }
@@ -317,17 +340,20 @@ class MapViewModel(
             val clientId = _uiState.value.activeJourneyClientId ?: return@launch
             _uiState.update { it.copy(isLoading = true) }
             try {
-                // Log journey stop
+                // Log journey stop with client name
                 val userId = getCurrentUserId() ?: return@launch
+                val client = _uiState.value.clients.find { it.id == clientId }
+                val clientName = client?.name ?: clientId
                 _uiState.value.currentLocation?.let { loc ->
-                    insertLocationLog(
+                    insertLocationLogUseCase(
                         userId = userId,
                         latitude = loc.latitude,
                         longitude = loc.longitude,
                         accuracy = _uiState.value.currentLocationAccuracy?.toDouble(),
+                        battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
                         clientId = clientId,
                         markActivity = "JOURNEY_STOP",
-                        markNotes = "Agent stopped journey to client: $clientId"
+                        markNotes = "Agent ended journey to $clientName"
                     )
                 }
                 _uiState.update { it.copy(
@@ -376,7 +402,46 @@ class MapViewModel(
         _uiState.update { it.copy(selectedClient = client, selectedAgent = null) }
     }
     fun selectAgent(agent: com.bluemix.clients_lead.domain.repository.AgentLocation?) {
-        _uiState.update { it.copy(selectedAgent = agent, selectedClient = null) }
+        _uiState.update { it.copy(
+            selectedAgent = agent, 
+            selectedClient = null,
+            selectedAgentJourney = emptyList() // Reset journey on new selection
+        ) }
+        
+        agent?.let { fetchSelectedAgentJourney(it.id) }
+    }
+
+    private fun fetchSelectedAgentJourney(agentId: String) {
+        viewModelScope.launch {
+            val dateStr = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+            when (val result = getLocationLogsByDateRange(agentId, dateStr, dateStr, limit = 1000, page = 1)) {
+                is AppResult.Success -> {
+                    // ✅ Optimization: Filter redundant logs (too close or same activity) to improve map performance
+                    val rawLogs = result.data.sortedBy { it.timestamp }
+                    val filteredLogs = mutableListOf<LocationLog>()
+                    
+                    rawLogs.forEachIndexed { index, log ->
+                        if (index == 0 || !log.markActivity.isNullOrBlank()) {
+                            filteredLogs.add(log)
+                        } else {
+                            val prev = filteredLogs.last()
+                            val dist = com.bluemix.clients_lead.core.common.utils.LocationUtils.calculateDistance(
+                                prev.latitude, prev.longitude, log.latitude, log.longitude
+                            )
+                            // Only add if moving > 10m or if it's been > 5 mins (to show drift/idling)
+                            if (dist > 10.0) {
+                                filteredLogs.add(log)
+                            }
+                        }
+                    }
+                    
+                    _uiState.update { it.copy(selectedAgentJourney = filteredLogs) }
+                }
+                is AppResult.Error -> {
+                    Timber.e("Failed to fetch journey for agent $agentId: ${result.error.message}")
+                }
+            }
+        }
     }
     fun updateAddress(clientId: String, newAddress: String) {
         viewModelScope.launch {
@@ -527,19 +592,27 @@ class MapViewModel(
         }
     }
     fun logout() {
-        viewModelScope.launch {
-            _uiState.value.currentLocation?.let { loc ->
-                getCurrentUserId()?.let { userId ->
-                    val email = _uiState.value.userEmail ?: "Unknown"
-                    insertLocationLog(
-                        userId = userId,
-                        latitude = loc.latitude,
-                        longitude = loc.longitude,
-                        markActivity = "LOGOUT",
-                        markNotes = "Agent ($email) logged out"
-                    )
-                }
+        // ✅ NEW: Non-blocking logout. Trigger sign-out immediately and fire-and-forget the log.
+        _uiState.update { it.copy(isLoading = true) }
+        
+        val currentLocation = _uiState.value.currentLocation
+        val userId = getCurrentUserId()
+        val email = _uiState.value.userEmail ?: "Unknown"
+
+        viewModelScope.launch(Dispatchers.IO) {
+            if (currentLocation != null && userId != null) {
+                insertLocationLogUseCase(
+                    userId = userId,
+                    latitude = currentLocation.latitude,
+                    longitude = currentLocation.longitude,
+                    battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
+                    markActivity = "LOGOUT",
+                    markNotes = "Agent ($email) logged out"
+                )
             }
+        }
+        
+        viewModelScope.launch {
             signOut()
         }
     }

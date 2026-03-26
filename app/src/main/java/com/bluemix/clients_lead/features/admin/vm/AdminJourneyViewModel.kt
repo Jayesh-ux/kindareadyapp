@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -51,8 +52,26 @@ class AdminJourneyViewModel(
     private val _uiState = MutableStateFlow(AdminJourneyUiState())
     val uiState: StateFlow<AdminJourneyUiState> = _uiState.asStateFlow()
 
+    private var refreshJob: kotlinx.coroutines.Job? = null
+
     init {
         loadAgents()
+        startAutoRefresh()
+    }
+
+    private fun startAutoRefresh() {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            while (true) {
+                delay(10000) // ✅ Faster 10s Real-time sync
+                if (_uiState.value.selectedDate == LocalDate.now() && _uiState.value.selectedAgent != null) {
+                    fetchLogs(isAutoRefresh = true)
+                }
+                if (_uiState.value.selectedDate == LocalDate.now()) {
+                    loadAgents() // Keep agent list (and their latest positions) fresh
+                }
+            }
+        }
     }
 
     private fun loadAgents() {
@@ -60,7 +79,17 @@ class AdminJourneyViewModel(
             _uiState.update { it.copy(isLoading = true) }
             when (val result = getTeamLocations()) {
                 is AppResult.Success -> {
-                    _uiState.update { it.copy(isLoading = false, agents = result.data) }
+                    val updatedAgents = result.data
+                    _uiState.update { state -> 
+                        state.copy(
+                            isLoading = false, 
+                            agents = updatedAgents,
+                            // ✅ Sync selectedAgent with fresh activity/location data
+                            selectedAgent = state.selectedAgent?.let { current ->
+                                updatedAgents.find { it.id == current.id } ?: current
+                            }
+                        ) 
+                    }
                 }
                 is AppResult.Error -> {
                     _uiState.update { it.copy(isLoading = false, error = result.error.message) }
@@ -83,12 +112,14 @@ class AdminJourneyViewModel(
         _uiState.update { it.copy(viewMode = mode) }
     }
 
-    private fun fetchLogs() {
+    private fun fetchLogs(isAutoRefresh: Boolean = false) {
         val state = _uiState.value
         val agent = state.selectedAgent ?: return
         
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            if (!isAutoRefresh) {
+                _uiState.update { it.copy(isLoading = true, error = null) }
+            }
             
             val dateStr = state.selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE) // "yyyy-MM-dd"
             
@@ -120,10 +151,19 @@ class AdminJourneyViewModel(
                         ) 
                     }
                     
-                    resolveAddresses(logs) // ✅ NEW: Start resolving addresses
+                    if (!isAutoRefresh) {
+                        resolveAddresses(logs) // ✅ NEW: Start resolving addresses
+                    } else {
+                        // Only resolve new addresses during auto-refresh
+                        val lastResolvedId = _uiState.value.resolvedAddresses.keys.lastOrNull()
+                        val newLogs = if (lastResolvedId != null) logs.dropWhile { it.id != lastResolvedId }.drop(1) else logs
+                        if (newLogs.isNotEmpty()) resolveAddresses(newLogs)
+                    }
                 }
                 is AppResult.Error -> {
-                    _uiState.update { it.copy(isLoading = false, error = result.error.message) }
+                    if (!isAutoRefresh) {
+                        _uiState.update { it.copy(isLoading = false, error = result.error.message) }
+                    }
                 }
             }
         }
@@ -155,18 +195,60 @@ class AdminJourneyViewModel(
     private fun resolveAddresses(logs: List<LocationLog>) {
         viewModelScope.launch {
             val currentAddresses = _uiState.value.resolvedAddresses.toMutableMap()
-            logs.forEach { log ->
+            val resolvedPoints = mutableListOf<Pair<LocationLog, String>>()
+            
+            // Build cache of already known points
+            currentAddresses.forEach { (id, addr) ->
+                logs.find { it.id == id }?.let { resolvedPoints.add(it to addr) }
+            }
+
+            for (log in logs) {
                 if (!currentAddresses.containsKey(log.id)) {
-                    val address = com.bluemix.clients_lead.core.common.utils.LocationUtils.getAddress(
-                        context, log.latitude, log.longitude
-                    )
-                    if (address != null) {
-                        currentAddresses[log.id] = address
+                    // Check for nearby (<= 50m) already resolved point to skip API
+                    var cachedAddress: String? = null
+                    for ((resolvedLog, addr) in resolvedPoints) {
+                        val dist = calculateDistanceMeters(
+                            log.latitude, log.longitude,
+                            resolvedLog.latitude, resolvedLog.longitude
+                        )
+                        if (dist <= 50.0) {
+                            cachedAddress = addr
+                            break
+                        }
+                    }
+
+                    if (cachedAddress != null) {
+                        currentAddresses[log.id] = cachedAddress
+                        resolvedPoints.add(log to cachedAddress)
                         _uiState.update { it.copy(resolvedAddresses = currentAddresses.toMap()) }
+                    } else {
+                        // Unique location -> Call API
+                        val address = com.bluemix.clients_lead.core.common.utils.LocationUtils.getAddress(
+                            context, log.latitude, log.longitude
+                        )
+                        if (address != null) {
+                            currentAddresses[log.id] = address
+                            resolvedPoints.add(log to address)
+                            _uiState.update { it.copy(resolvedAddresses = currentAddresses.toMap()) }
+                        }
                     }
                 }
             }
         }
+    }
+
+    fun exportJourneyReport(): String {
+        val state = _uiState.value
+        val sb = StringBuilder()
+        sb.append("Date,Time,Activity,Notes,Latitude,Longitude,Accuracy,Battery,Address\n")
+        
+        state.logs.forEach { log ->
+            val address = state.resolvedAddresses[log.id] ?: "Unknown"
+            val time = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)
+            sb.append("${state.selectedDate},$time,${log.markActivity ?: "Movement"},\"${(log.markNotes ?: "").replace("\"", "'")}\",${log.latitude},${log.longitude},${log.accuracy},${log.battery ?: ""},\"$address\"\n")
+        }
+        
+        return sb.toString()
     }
 
     private fun calculateDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

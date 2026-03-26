@@ -8,7 +8,7 @@ fun LocationLogDto.toDomain(): LocationLog {
     return LocationLog(
         id = id ?: "",
         userId = userId,
-        userEmail = userEmail, // Map the new field
+        userEmail = userEmail,
         latitude = latitude,
         longitude = longitude,
         accuracy = accuracy,
@@ -17,7 +17,8 @@ fun LocationLogDto.toDomain(): LocationLog {
         battery = battery,
         markActivity = markActivity,
         markNotes = markNotes,
-        clientId = clientId
+        clientId = clientId,
+        clientName = LocationLog.parseClientName(markNotes) // S12: Structured parse
     )
 }
 

@@ -28,6 +28,6 @@ val locationModule = module {
     single { LocationTrackingManager(androidContext()) }
     single { LocationTrackingStateManager(androidContext(), get()) }
 
-    // ViewModel — 8 parameters now
-    viewModel { ActivityViewModel(androidContext(), get(), get(), get(), get(), get(), get(), get()) }
+    // ViewModel — 9 parameters now
+    viewModel { ActivityViewModel(androidContext(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

@@ -58,7 +58,19 @@ sealed class Route {
 
     @Serializable
     data object AdminAddService : Route()
+
+    @Serializable
+    data object AdminBankAccount : Route()
+
+    @Serializable
+    data object AdminSlotExpansion : Route()
+
+    @Serializable
+    data object AdminPlanUsage : Route()
     
     @Serializable
     data class AdminAgentDetail(val agentId: String) : Route()
+
+    @Serializable
+    data object AdminMeetingLogs : Route()
 }

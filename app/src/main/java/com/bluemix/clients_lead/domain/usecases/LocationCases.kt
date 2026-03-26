@@ -43,8 +43,10 @@ class GetLocationLogsByDateRange(
     suspend operator fun invoke(
         userId: String,
         startDate: String,
-        endDate: String
-    ): AppResult<List<LocationLog>> = repository.getLocationLogsByDateRange(userId, startDate, endDate)
+        endDate: String,
+        limit: Int = 100,
+        page: Int = 1
+    ): AppResult<List<LocationLog>> = repository.getLocationLogsByDateRange(userId, startDate, endDate, limit, page)
 }
 
 /**

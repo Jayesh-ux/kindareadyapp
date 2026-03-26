@@ -101,6 +101,34 @@ class NavigationManager(private val navController: NavController) {
     }
 
     /**
+     * Navigate to Admin Bank Account Management
+     */
+    fun navigateToAdminBankAccount() {
+        navController.navigate(Route.AdminBankAccount)
+    }
+
+    /**
+     * Navigate to Admin Slot Expansion
+     */
+    fun navigateToAdminSlotExpansion() {
+        navController.navigate(Route.AdminSlotExpansion)
+    }
+
+    /**
+     * Navigate to Admin Plan Usage
+     */
+    fun navigateToAdminPlanUsage() {
+        navController.navigate(Route.AdminPlanUsage)
+    }
+
+    /**
+     * Navigate to Admin Meeting Logs
+     */
+    fun navigateToAdminMeetingLogs() {
+        navController.navigate(Route.AdminMeetingLogs)
+    }
+
+    /**
      * Navigate back
      */
     fun navigateBack() {

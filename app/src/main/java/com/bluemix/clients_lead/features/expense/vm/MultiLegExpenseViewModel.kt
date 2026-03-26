@@ -22,6 +22,7 @@ import com.bluemix.clients_lead.domain.model.toTransportMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.bluemix.clients_lead.domain.usecases.InsertLocationLog
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -46,6 +47,7 @@ data class TripLegUiModel(
     val distanceKm: Double = 0.0,
     val transportMode: TransportMode = TransportMode.BUS,
     val amountSpent: Double = 0.0,
+    val amountSpentString: String = "", // ✅ NEW: UI-friendly string state
     val notes: String = "",
     val legNumber: Int,
     // ✅ NEW: Route visualization data
@@ -115,7 +117,8 @@ class MultiLegExpenseViewModel(
     private val submitExpense: SubmitTripExpenseUseCase,
     private val sessionManager: SessionManager,
     private val locationSearchRepo: LocationSearchRepository,
-    private val draftRepository: DraftExpenseRepository
+    private val draftRepository: DraftExpenseRepository,
+    private val insertLocationLogUseCase: InsertLocationLog
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MultiLegTripUiState())
@@ -278,7 +281,8 @@ class MultiLegExpenseViewModel(
                         endLocationQuery = draft.endLocation?.displayName ?: "",
                         distanceKm = draft.distanceKm,
                         transportMode = draft.transportMode.toTransportMode(),
-                        amountSpent = draft.amountSpent
+                        amountSpent = draft.amountSpent,
+                        amountSpentString = if (draft.amountSpent > 0) draft.amountSpent.toString() else ""
                     )
 
                     _uiState.value = MultiLegTripUiState(
@@ -452,8 +456,14 @@ class MultiLegExpenseViewModel(
         }
     }
 
-    fun updateLegAmount(legIndex: Int, amount: Double) {
-        updateLeg(legIndex) { it.copy(amountSpent = amount) }
+    fun updateLegAmount(legIndex: Int, amountStr: String) {
+        val amount = amountStr.toDoubleOrNull() ?: 0.0
+        updateLeg(legIndex) { 
+            it.copy(
+                amountSpent = amount,
+                amountSpentString = amountStr
+            ) 
+        }
         recalculateTotals()
     }
 
@@ -757,6 +767,22 @@ class MultiLegExpenseViewModel(
                         _uiState.value = MultiLegTripUiState(
                             successMessage = "Trip submitted successfully!"
                         )
+                        // Log activity for S10 audit trail
+                        val firstLeg = state.legs.firstOrNull()
+                        val lastLeg = state.legs.lastOrNull()
+                        val transport = firstLeg?.transportMode ?: "Unknown"
+                        val startName = firstLeg?.startLocation?.displayName ?: "Unknown"
+                        val endName = lastLeg?.endLocation?.displayName ?: "Unknown"
+                        
+                        insertLocationLogUseCase(
+                            userId = userId,
+                            latitude = firstLeg?.startLocation?.latitude ?: 0.0,
+                            longitude = firstLeg?.startLocation?.longitude ?: 0.0,
+                            markActivity = "EXPENSE_SUBMITTED",
+                            markNotes = "Multi-leg trip: ${state.tripName} ($startName to $endName) via $transport. Total: ₹${state.totalAmountSpent}",
+                            clientId = null
+                        )
+
                         onSuccess()
                     }
                     is AppResult.Error -> {

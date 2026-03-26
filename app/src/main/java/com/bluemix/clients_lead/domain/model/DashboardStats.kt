@@ -4,5 +4,6 @@ data class DashboardStats(
     val activeAgents: Int,
     val totalClients: Int,
     val gpsVerified: Int, // Percentage
-    val coverage: Int // Percentage
+    val coverage: Int, // Percentage
+    val hiddenClients: Int = 0
 )

@@ -26,6 +26,7 @@ object ApiEndpoints {
     object Clients {
         const val BASE = "/clients"
         const val UPLOAD_EXCEL = "/clients/upload-excel"
+        const val RETRY_GEOCODING = "$BASE/retry-geocoding"
 
         const val MANUAL_CREATE = "/api/manual-clients"
 
@@ -79,6 +80,24 @@ object ApiEndpoints {
 
         // Upload attachment to a meeting
         fun attachments(meetingId: String) = "$BASE/$meetingId/attachments"
+    }
+
+    /**
+     * Payment endpoints
+     */
+    object Payments {
+        const val BASE = "/api/payments"
+        fun userBankAccount(userId: String) = "$BASE/admin/user-bank-account/$userId"
+        fun updateUserBankAccount(userId: String) = "$BASE/admin/update-user-bank-account/$userId"
+    }
+
+    /**
+     * Plan and Subscription endpoints
+     */
+    object Plans {
+        const val BASE = "/api/plans"
+        const val MY_PLAN = "$BASE/my-plan"
+        const val PURCHASE_SLOTS = "$BASE/purchase-slots"
     }
 
     /**

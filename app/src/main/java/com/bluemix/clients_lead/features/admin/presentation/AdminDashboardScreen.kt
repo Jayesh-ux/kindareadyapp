@@ -37,7 +37,11 @@ fun AdminDashboardScreen(
     onNavigateToReports: (String?) -> Unit = {},
     onNavigateToUsers: () -> Unit = {},
     onNavigateToClientServices: () -> Unit = {},
-    onNavigateToAgentDetail: (String) -> Unit = {}
+    onNavigateToBankAccount: () -> Unit = {},
+    onNavigateToSlotExpansion: () -> Unit = {},
+    onNavigateToPlanUsage: () -> Unit = {},
+    onNavigateToAgentDetail: (String) -> Unit = {},
+    onNavigateToMeetingLogs: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -73,7 +77,10 @@ fun AdminDashboardScreen(
         ) {
             // Summary Stats Grid
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     StatCard(
                         title = "Active Agents",
                         value = uiState.activeAgentsCount.toString(),
@@ -88,20 +95,11 @@ fun AdminDashboardScreen(
                         color = Color(0xFF3B82F6), // Blue 500
                         modifier = Modifier.weight(1f)
                     )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     StatCard(
-                        title = "GPS Verified",
-                        value = "${uiState.gpsVerifiedCount}%",
-                        icon = Icons.Default.GpsFixed,
-                        color = Color(0xFF8B5CF6), // Violet 500
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatCard(
-                        title = "Coverage",
-                        value = "${uiState.coveragePercent}%",
-                        icon = Icons.Default.Public,
-                        color = Color(0xFFF59E0B), // Amber 500
+                        title = "Hidden Clients",
+                        value = uiState.hiddenClientsCount.toString(),
+                        icon = Icons.Default.LocationOff,
+                        color = Color(0xFFEF4444), // Red 500
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -155,6 +153,59 @@ fun AdminDashboardScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+                AdminNavCard(
+                    title = "Location Recovery",
+                    subtitle = "Trigger self-heal for hidden clients",
+                    icon = Icons.Default.AutoFixHigh,
+                    onClick = viewModel::retryGeocoding,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                AdminNavCard(
+                    title = "Meeting Logs",
+                    subtitle = "Team visit history",
+                    icon = Icons.Default.History,
+                    onClick = onNavigateToMeetingLogs,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Financials & Subscription
+            Text(
+                text = "Financials & Subscription",
+                style = AppTheme.typography.h3,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    AdminNavCard(
+                        title = "Bank Accounts",
+                        subtitle = "Manager user UPI/Bank",
+                        icon = Icons.Default.AccountBalance,
+                        onClick = onNavigateToBankAccount,
+                        modifier = Modifier.weight(1f)
+                    )
+                    AdminNavCard(
+                        title = "Expand Capacity",
+                        subtitle = "Purchase more slots",
+                        icon = Icons.Default.AddBusiness,
+                        onClick = onNavigateToSlotExpansion,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                AdminNavCard(
+                    title = "Plan Usage",
+                    subtitle = "Subscription & limits",
+                    icon = Icons.Default.Analytics,
+                    onClick = onNavigateToPlanUsage,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             // Team Activity List Header

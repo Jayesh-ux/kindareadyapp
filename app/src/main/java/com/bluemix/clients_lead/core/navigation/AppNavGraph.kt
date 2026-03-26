@@ -198,7 +198,11 @@ fun AppNavHost() {
                         onNavigateToReports = { agentId -> navigationManager.navigateToAdminJourney(agentId) },
                         onNavigateToUsers = { navigationManager.navigateToAdminUsers() },
                         onNavigateToClientServices = { navigationManager.navigateToAdminClientServices() },
-                        onNavigateToAgentDetail = { agentId -> navigationManager.navigateToAgentDetail(agentId) }
+                        onNavigateToBankAccount = { navigationManager.navigateToAdminBankAccount() },
+                        onNavigateToSlotExpansion = { navigationManager.navigateToAdminSlotExpansion() },
+                        onNavigateToPlanUsage = { navigationManager.navigateToAdminPlanUsage() },
+                        onNavigateToAgentDetail = { agentId -> navigationManager.navigateToAgentDetail(agentId) },
+                        onNavigateToMeetingLogs = { navigationManager.navigateToAdminMeetingLogs() }
                     )
                 }
             }
@@ -282,6 +286,51 @@ fun AppNavHost() {
                     agentId = args.agentId,
                     onNavigateBack = navigationManager::navigateBack,
                     onNavigateToReports = { navigationManager.navigateToAdminJourney(it) }
+                )
+            }
+        }
+
+        composable<Route.AdminBankAccount> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                com.bluemix.clients_lead.features.admin.presentation.AdminBankAccountScreen(
+                    onNavigateBack = navigationManager::navigateBack
+                )
+            }
+        }
+
+        composable<Route.AdminSlotExpansion> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                com.bluemix.clients_lead.features.admin.presentation.AdminSlotExpansionScreen(
+                    onNavigateBack = navigationManager::navigateBack
+                )
+            }
+        }
+
+        composable<Route.AdminPlanUsage> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                com.bluemix.clients_lead.features.admin.presentation.AdminPlanUsageScreen(
+                    onNavigateBack = navigationManager::navigateBack,
+                    onNavigateToUpgrade = { navigationManager.navigateToAdminSlotExpansion() }
+                )
+            }
+        }
+
+        composable<Route.AdminMeetingLogs> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                com.bluemix.clients_lead.features.admin.presentation.MeetingLogsScreen(
+                    onNavigateBack = navigationManager::navigateBack
                 )
             }
         }

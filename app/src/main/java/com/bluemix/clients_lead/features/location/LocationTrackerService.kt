@@ -53,7 +53,7 @@ class LocationTrackerService : Service() {
     private val httpClient: HttpClient by inject()
     private val sessionManager: SessionManager by inject()
     private val locationRepository: ILocationRepository by inject()
-    private val insertLocationLog: InsertLocationLog by inject()
+    private val insertLocationLogUseCase: InsertLocationLog by inject()
 
     // SharedFlow for broadcasting location updates to UI
     private val _locationFlow = MutableSharedFlow<Location>(replay = 1)
@@ -63,11 +63,56 @@ class LocationTrackerService : Service() {
     private var locationTrackingJob: Job? = null
     private var periodicSaveJob: Job? = null
     private var latestLocation: Location? = null
+    private var lastSavedLocation: Location? = null // ✅ TRACK LAST SAVED
     private var lastSavedTime = System.currentTimeMillis()
-    private var activeClientId: String? = null // Scoped client ID (as String)
+    private var activeClientId: String? = null
+    private var activeClientName: String? = null
+    private var transportMode: String? = null
+    private var activeClientLat: Double? = null 
+    private var activeClientLng: Double? = null
+
+    // S11: Idle detection state
+    private var lastSignificantMoveTime = System.currentTimeMillis()
+    private var isCurrentlyIdle = false
+    private val IDLE_THRESHOLD_MS = 15 * 60 * 1000L // 15 minutes
+    private val IDLE_DISTANCE_THRESHOLD = 50f // meters
+
+    // S5: SharedPreferences key for persisting state across restarts
+    private val PREFS_NAME = "tracker_service_state"
+    private val PREF_CLIENT_ID = "active_client_id"
+    private val PREF_CLIENT_NAME = "active_client_name"
+    private val PREF_TRANSPORT_MODE = "transport_mode"
+    private val PREF_CLIENT_LAT = "client_lat"
+    private val PREF_CLIENT_LNG = "client_lng"
+
+    private fun persistState() {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().apply {
+            putString(PREF_CLIENT_ID, activeClientId)
+            putString(PREF_CLIENT_NAME, activeClientName)
+            putString(PREF_TRANSPORT_MODE, transportMode)
+            if (activeClientLat != null) putFloat(PREF_CLIENT_LAT, activeClientLat!!.toFloat()) else remove(PREF_CLIENT_LAT)
+            if (activeClientLng != null) putFloat(PREF_CLIENT_LNG, activeClientLng!!.toFloat()) else remove(PREF_CLIENT_LNG)
+            apply()
+        }
+    }
+
+    private fun restoreState() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        activeClientId = prefs.getString(PREF_CLIENT_ID, null)
+        activeClientName = prefs.getString(PREF_CLIENT_NAME, null)
+        transportMode = prefs.getString(PREF_TRANSPORT_MODE, null)
+        activeClientLat = if (prefs.contains(PREF_CLIENT_LAT)) prefs.getFloat(PREF_CLIENT_LAT, 0f).toDouble() else null
+        activeClientLng = if (prefs.contains(PREF_CLIENT_LNG)) prefs.getFloat(PREF_CLIENT_LNG, 0f).toDouble() else null
+        Timber.d("🔄 Restored state: client=$activeClientName ($activeClientId), mode=$transportMode")
+    }
+
+    private fun clearPersistedState() {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+    }
 
     // Configuration
-    private val saveInterval = 10 * 60 * 1000L // 1 minute (configurable)
+    private val MIN_DISTANCE_METERS = 200f // breadcrumb every 200m
+    private val saveInterval = 10 * 60 * 1000L // 10 mins fallback
 
     // Notification components
     private lateinit var notificationManager: NotificationManager
@@ -107,20 +152,24 @@ class LocationTrackerService : Service() {
                 }
             }
             Action.UPDATE_CLIENT.name -> {
-                val clientId = intent.getStringExtra(EXTRA_CLIENT_ID)
-                activeClientId = clientId
-                Timber.d("📍 Updated active client: $clientId")
+                activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
+                activeClientName = intent.getStringExtra(EXTRA_CLIENT_NAME)
+                transportMode = intent.getStringExtra(EXTRA_TRANSPORT_MODE)
+                activeClientLat = if (intent.hasExtra(EXTRA_CLIENT_LAT)) intent.getDoubleExtra(EXTRA_CLIENT_LAT, 0.0) else null
+                activeClientLng = if (intent.hasExtra(EXTRA_CLIENT_LNG)) intent.getDoubleExtra(EXTRA_CLIENT_LNG, 0.0) else null
+                persistState() // S5: save to disk
+                Timber.d("📍 Updated active client: $activeClientName ($activeClientId) via $transportMode at ($activeClientLat, $activeClientLng)")
             }
             Action.STOP.name -> stop()
         }
 
-        return START_NOT_STICKY
+        return START_STICKY // ✅ Ensure service restarts if killed
 
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Timber.w("🚫 App removed from recents → stopping location tracking service")
-        stop()
+        Timber.w("🚫 App removed from recents - continuing location tracking in background")
+        // stop() // ✅ REMOVED: Do not stop service when app is swiped away
         super.onTaskRemoved(rootIntent)
     }
 
@@ -141,6 +190,11 @@ class LocationTrackerService : Service() {
         }
 
         Timber.d("Starting location tracking for user: $userId")
+
+        // S5: Restore persisted state on restart
+        if (activeClientId == null) {
+            restoreState()
+        }
 
         val locationManager = LocationManager(applicationContext)
         if (!locationManager.hasLocationPermission()) {
@@ -179,12 +233,107 @@ class LocationTrackerService : Service() {
                             .build()
                     )
 
-                    // ✅ OPTIMIZED: Movement-based save instead of timer
-                    // This follows the "Senior Engineer Proof" documentation
-                    // for 99% accuracy and zero waste.
+                    // ✅ INTELLIGENT TRACKING: Save only if significant movement or time elapsed
                     val userId = sessionManager.getCurrentUserId()
                     if (userId != null) {
-                        saveLocationToDatabase(userId, location)
+                        val distanceMoved = lastSavedLocation?.distanceTo(location) ?: Float.MAX_VALUE
+                        val timeElapsed = System.currentTimeMillis() - lastSavedTime
+                        
+                        // ✅ MOVEMENT-BASED: Save if moved > 30m OR if it's been > 90 seconds (Real-time Heartbeat)
+                        if (distanceMoved >= 30f || timeElapsed >= (90 * 1000L)) {
+                            Timber.d("📍 Distance: ${distanceMoved}m, Time: ${timeElapsed}ms → Saving breadcrumb")
+                            lastSavedLocation = location
+                            lastSavedTime = System.currentTimeMillis()
+                            
+                            // S11: Idle detection
+                            if (distanceMoved >= IDLE_DISTANCE_THRESHOLD) {
+                                if (isCurrentlyIdle) {
+                                    // Agent was idle but started moving again
+                                    isCurrentlyIdle = false
+                                    val idleDurationMin = ((System.currentTimeMillis() - lastSignificantMoveTime) / 60000).toInt()
+                                    scope.launch {
+                                        locationRepository.insertLocationLog(
+                                            userId = userId,
+                                            latitude = location.latitude,
+                                            longitude = location.longitude,
+                                            accuracy = location.accuracy.toDouble(),
+
+                                            battery = BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
+                                            clientId = activeClientId,
+                                            markActivity = "IDLE_END",
+                                            markNotes = "Agent resumed movement after ${idleDurationMin}min idle"
+                                        )
+                                    }
+                                    Timber.d("▶️ Agent resumed after ${idleDurationMin}min idle")
+                                }
+                                lastSignificantMoveTime = System.currentTimeMillis()
+                            } else {
+                                // Agent hasn't moved much
+                                val timeSinceLastMove = System.currentTimeMillis() - lastSignificantMoveTime
+                                if (!isCurrentlyIdle && timeSinceLastMove >= IDLE_THRESHOLD_MS && !activeClientId.isNullOrBlank()) {
+                                    isCurrentlyIdle = true
+                                    scope.launch {
+                                        locationRepository.insertLocationLog(
+                                            userId = userId,
+                                            latitude = location.latitude,
+                                            longitude = location.longitude,
+                                            accuracy = location.accuracy.toDouble(),
+
+                                            battery = BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
+                                            clientId = activeClientId,
+                                            markActivity = "IDLE_START",
+                                            markNotes = "Agent stationary for 15+ min during journey to ${activeClientName ?: activeClientId}"
+                                        )
+                                    }
+                                    Timber.d("⏸️ Agent idle for 15+ min during journey")
+                                }
+                            }
+                            
+                            // ✅ S4: Determine activity tag based on state
+                            var currentActivity: String
+                            if (!activeClientId.isNullOrBlank()) {
+                                // Agent is on an active journey
+                                currentActivity = "TRAVELING"
+                                if (activeClientLat != null && activeClientLng != null) {
+                                    val clientLoc = Location("").apply {
+                                        setLatitude(activeClientLat!!)
+                                        setLongitude(activeClientLng!!)
+                                    }
+                                    val distanceToClient = location.distanceTo(clientLoc)
+                                    if (distanceToClient <= 200f) {
+                                        currentActivity = "AT_CLIENT_SITE"
+                                    }
+                                    Timber.d("📏 Distance to client $activeClientId: ${distanceToClient}m. Activity: $currentActivity")
+                                }
+                                // S3: If no client coords, default stays TRAVELING (not AT_CLIENT_SITE)
+                            } else {
+                                // S4: Agent is clocked in but not on a journey → ON_DUTY
+                                currentActivity = "ON_DUTY"
+                            }
+                            
+                            // ✅ Enhanced breadcrumb note
+                            val breadcrumbNote = when (currentActivity) {
+                                "TRAVELING" -> "Heading to ${activeClientName ?: activeClientId} via ${transportMode ?: "Car"}"
+                                "AT_CLIENT_SITE" -> "At ${activeClientName ?: activeClientId} site"
+                                "ON_DUTY" -> "On duty - no active journey"
+                                else -> null
+                            }
+
+                            val result = locationRepository.insertLocationLog(
+                                userId = userId,
+                                latitude = location.latitude,
+                                longitude = location.longitude,
+                                accuracy = location.accuracy.toDouble(),
+                                battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
+                                clientId = activeClientId, // ✅ Pass active client if available
+                                markActivity = currentActivity, // ✅ Tag as Traveling or At Client Site
+                                markNotes = breadcrumbNote
+                            )
+                            when (result) {
+                                is AppResult.Success -> Timber.d("✅ Saved breadcrumb point: ${result.data.id}")
+                                is AppResult.Error -> Timber.e("❌ Failed to save breadcrumb: ${result.error.message}")
+                            }
+                        }
                     }
                 }
 
@@ -218,7 +367,7 @@ class LocationTrackerService : Service() {
     private suspend fun saveLocationToDatabase(userId: String, location: Location) {
         val battery = BatteryUtils.getBatteryPercentage(this)
         try {
-            when (val result = insertLocationLog(
+            when (val result = insertLocationLogUseCase(
                 userId = userId,
                 latitude = location.latitude,
                 longitude = location.longitude,
@@ -249,8 +398,9 @@ class LocationTrackerService : Service() {
         locationTrackingJob?.cancel()
         periodicSaveJob?.cancel()
 
-        // Clear references
+        // Clear references and persisted state
         latestLocation = null
+        clearPersistedState() // S5: clean up on explicit stop
 
         // Stop foreground and service
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -278,6 +428,10 @@ class LocationTrackerService : Service() {
         const val LOCATION_CHANNEL = "location_channel"
         private const val NOTIFICATION_ID = 1
         const val EXTRA_CLIENT_ID = "extra_client_id"
+        const val EXTRA_CLIENT_NAME = "extra_client_name"
+        const val EXTRA_TRANSPORT_MODE = "extra_transport_mode"
+        const val EXTRA_CLIENT_LAT = "extra_client_lat"
+        const val EXTRA_CLIENT_LNG = "extra_client_lng"
     }
 }
 

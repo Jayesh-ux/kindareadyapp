@@ -84,7 +84,8 @@ val expenseModule = module {
             uploadReceipt = get(),
             sessionManager = get(),
             locationSearchRepo = get(),
-            draftRepository = get()
+            draftRepository = get(),
+            insertLocationLogUseCase = get() // S10: For activity logging
         )
     }
 
@@ -93,7 +94,8 @@ val expenseModule = module {
             submitExpense = get(),
             sessionManager = get(),
             locationSearchRepo = get(),
-            draftRepository = get()
+            draftRepository = get(),
+            insertLocationLogUseCase = get() // S10: Added activity logging
         )
     }
 }

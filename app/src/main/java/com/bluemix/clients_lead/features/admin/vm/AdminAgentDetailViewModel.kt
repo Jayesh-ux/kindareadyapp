@@ -39,6 +39,16 @@ class AdminAgentDetailViewModel(
 
     init {
         loadData()
+        startPolling()
+    }
+
+    private fun startPolling() {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(10000) // 10 seconds
+                loadData()
+            }
+        }
     }
 
     fun loadData() {
@@ -60,8 +70,10 @@ class AdminAgentDetailViewModel(
                 val sortedLogs = logsResult.data.sortedByDescending { it.timestamp }
                 val distance = LocationUtils.calculateTotalDistanceKm(logsResult.data)
                 
+                val filteredLogs = sortedLogs.filter { it.markActivity != null }
+                
                 _uiState.update { it.copy(
-                    recentLogs = sortedLogs.take(20),
+                    recentLogs = filteredLogs.take(20),
                     todayDistanceKm = distance,
                     isLoading = false
                 ) }

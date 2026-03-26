@@ -127,7 +127,13 @@ interface IClientRepository {
      * Get aggregate dashboard statistics (Admins only)
      */
     suspend fun getDashboardStats(): AppResult<com.bluemix.clients_lead.domain.model.DashboardStats>
+
+    /**
+     * ✅ NEW: Trigger background geocoding for all clients with missing coordinates
+     */
+    suspend fun retryGeocoding(): AppResult<Unit>
 }
+
 
 data class AgentLocation(
     val id: String,
@@ -139,8 +145,35 @@ data class AgentLocation(
     val timestamp: String?,
     val activity: String?,
     val battery: Int?,
-    val isActive: Boolean = true
-)
+    val isActive: Boolean = true,
+    // S7: Enriched fields — derived from markNotes / activity strings
+    val currentClientName: String? = null,
+    val transportMode: String? = null,
+    val currentActivity: String? = null  // Friendly label e.g. "Traveling to Acme Corp"
+) {
+    companion object {
+        /** Parse structured context from free-text markNotes like "Heading to Acme Corp via Bike" */
+        fun parseContext(activity: String?, markNotes: String?): Triple<String?, String?, String?> {
+            if (markNotes.isNullOrBlank()) return Triple(null, null, activity)
+            // "Heading to [Client] via [Mode]"
+            val headingRegex = Regex("Heading to (.+?) via (.+)", RegexOption.IGNORE_CASE)
+            headingRegex.find(markNotes)?.let {
+                return Triple(it.groupValues[1].trim(), it.groupValues[2].trim(), "Traveling to ${it.groupValues[1].trim()}")
+            }
+            // "At [Client] site"
+            val atSiteRegex = Regex("At (.+?) site", RegexOption.IGNORE_CASE)
+            atSiteRegex.find(markNotes)?.let {
+                return Triple(it.groupValues[1].trim(), null, "At ${it.groupValues[1].trim()} site")
+            }
+            // "Agent started journey to [Client] via [Mode]"
+            val journeyRegex = Regex("journey to (.+?) via (.+)", RegexOption.IGNORE_CASE)
+            journeyRegex.find(markNotes)?.let {
+                return Triple(it.groupValues[1].trim(), it.groupValues[2].trim(), "Started journey to ${it.groupValues[1].trim()}")
+            }
+            return Triple(null, null, activity)
+        }
+    }
+}
 
 /**
  * Encapsulates client selection for Map view along with potential status messages

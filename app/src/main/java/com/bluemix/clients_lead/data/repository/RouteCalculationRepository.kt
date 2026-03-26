@@ -115,11 +115,11 @@ class RouteCalculationRepository(
                     val (startStation, endStation) = checkNearbyTrainStationsDetailed(start, end)
 
                     if (startStation == null) {
-                        return false to "No railway station found within 3 KM of your start location. Try Bus or Rickshaw instead."
+                        return false to "No railway station found within 10 KM of your start location. Try Bus or Rickshaw instead."
                     }
 
                     if (endStation == null) {
-                        return false to "No railway station found within 3 KM of destination. Try Bus or Rickshaw instead."
+                        return false to "No railway station found within 10 KM of destination. Try Bus or Rickshaw instead."
                     }
 
                     Timber.d("✅ Found stations: $startStation → $endStation")
@@ -168,7 +168,7 @@ class RouteCalculationRepository(
         // ✅ Retry up to 2 times if it fails
         repeat(maxRetries + 1) { attempt ->
             try {
-                val radius = 3000
+                val radius = 10000  // 10 KM radius for station search
 
                 val query = """
                     [out:json][timeout:25];
@@ -196,7 +196,7 @@ class RouteCalculationRepository(
                 }.body()
 
                 if (response.elements.isEmpty()) {
-                    Timber.w("⚠️ No railway stations found within 3km of $locationName")
+                    Timber.w("⚠️ No railway stations found within 10km of $locationName")
                     return null
                 }
 

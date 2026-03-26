@@ -110,7 +110,7 @@ fun AdminAddServiceScreen(
                 )
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            androidx.compose.material3.HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
             InfoSection("Assignments (All Optional)")
 
             // Client Selector

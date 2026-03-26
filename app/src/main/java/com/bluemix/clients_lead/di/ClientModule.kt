@@ -54,6 +54,7 @@ val clientModule = module {
     factory { GetClientServices(repository = get()) }
     factory { AddClientService(repository = get()) }
     factory { AcceptClientService(repository = get()) }
+    factory { RetryGeocoding(repository = get()) }
     factory { OCRRepository() }
 
     // ViewModels

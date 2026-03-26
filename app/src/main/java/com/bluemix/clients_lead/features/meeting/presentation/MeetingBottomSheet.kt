@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bluemix.clients_lead.domain.model.Client
 import com.bluemix.clients_lead.domain.model.Meeting
 import com.bluemix.clients_lead.features.meeting.vm.AttachmentInfo
@@ -46,10 +47,12 @@ fun MeetingBottomSheet(
     isUploadingAttachments: Boolean,
     proximityState: ProximityVerificationState = ProximityVerificationState.None,  // ✅ NEW
     error: String? = null, // ✅ NEW
-    activeJourneyClientId: String? = null, // ✅ REFINED
+    activeJourneyClientId: String? = null,
+    onStartJourney: (String, String) -> Unit = { _, _ -> }, // ✅ REFINED: added mode
+    onStopJourney: () -> Unit = {},
     currentLocation: LatLng? = null, // ✅ REFINED
-    onStartJourney: (String) -> Unit = {}, // ✅ REFINED
-    onStopJourney: () -> Unit = {}, // ✅ REFINED
+    comments: String = "", // ✅ NEW: ViewModel backed
+    onCommentsChange: (String) -> Unit = {}, // ✅ NEW
     onStartMeeting: () -> Unit,
     onEndMeeting: (comments: String, clientStatus: String) -> Unit,
     onAddAttachment: (Uri) -> Unit,
@@ -58,17 +61,24 @@ fun MeetingBottomSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var comments by remember { mutableStateOf("") }
     var selectedClientStatus by remember { mutableStateOf(client.status) }
     var showEndConfirmation by remember { mutableStateOf(false) }
     var showDismissWarning by remember { mutableStateOf(false) }
 
-    // ✅ File picker launcher for ANY file type
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris ->
-        uris.forEach { uri ->
-            onAddAttachment(uri)
+    // ✅ STRICT: Camera-only capture for mandatory storefront photos
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val fileProviderAuthority = "${context.packageName}.fileprovider"
+    var currentImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    val cameraPermission = com.google.accompanist.permissions.rememberPermissionState(
+        android.Manifest.permission.CAMERA
+    )
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && currentImageUri != null) {
+            onAddAttachment(currentImageUri!!)
         }
     }
 
@@ -202,6 +212,38 @@ fun MeetingBottomSheet(
                     }
                 }
 
+                // ✅ PROXIMITY WARNING (Strict Enforcement)
+                AnimatedVisibility(
+                    visible = activeMeeting == null && !isWithinProximity && currentLocation != null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFFF5252).copy(alpha = 0.15f))
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GpsFixed,
+                                contentDescription = null,
+                                tint = Color(0xFFFF5252),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Out of Range: You must be within 50m of the client to start a meeting (Current: ${String.format("%.0f", distanceToClient ?: 0.0)}m)",
+                                style = AppTheme.typography.body2,
+                                color = Color(0xFFFF5252)
+                            )
+                        }
+                    }
+                }
+
                 // Warning message when meeting is in-progress
                 AnimatedVisibility(
                     visible = activeMeeting != null,
@@ -249,11 +291,15 @@ fun MeetingBottomSheet(
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
+                    var selectedMode by remember { mutableStateOf("Car") }
+                    
                     JourneyControlCard(
                         isTracking = isTrackingThisClient,
                         isTrackingOther = isTrackingOtherClient,
                         distance = distanceToClient,
-                        onStartJourney = { onStartJourney(client.id) },
+                        selectedMode = selectedMode,
+                        onModeChange = { selectedMode = it },
+                        onStartJourney = { onStartJourney(client.id, selectedMode) },
                         onStopJourney = onStopJourney
                     )
                 }
@@ -336,7 +382,7 @@ fun MeetingBottomSheet(
                     }
                 }
 
-                // COMMENTS
+                // COMMENTS (Only visible AFTER start, mandatory for end)
                 AnimatedVisibility(
                     visible = activeMeeting != null,
                     enter = expandVertically() + fadeIn(),
@@ -344,15 +390,15 @@ fun MeetingBottomSheet(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "Meeting Notes",
+                            text = "Meeting Notes (Mandatory)",
                             style = AppTheme.typography.body1,
                             color = Color.White
                         )
 
                         OutlinedTextField(
                             value = comments,
-                            onValueChange = { comments = it },
-                            placeholder = { Text("Add comments about client requirements...") },
+                            onValueChange = onCommentsChange,
+                            placeholder = { Text("Enter meeting notes or client requirements...") },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 120.dp),
@@ -361,7 +407,7 @@ fun MeetingBottomSheet(
                     }
                 }
 
-                // ✅ ATTACHMENTS SECTION
+                // ✅ ATTACHMENTS SECTION (Only visible AFTER start, mandatory for end)
                 AnimatedVisibility(
                     visible = activeMeeting != null,
                     enter = expandVertically() + fadeIn(),
@@ -374,15 +420,29 @@ fun MeetingBottomSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Attachments",
+                                text = "Attachments (Mandatory - Client Photo)",
                                 style = AppTheme.typography.body1,
                                 color = Color.White
                             )
 
                             TextButton(
                                 onClick = {
-                                    // ✅ Launch file picker for ANY file type
-                                    filePickerLauncher.launch("*/*")
+                                    if (cameraPermission.status.isGranted) {
+                                        // ✅ Mandatory Camera Capture
+                                        val photoFile = java.io.File(
+                                            context.cacheDir,
+                                            "storefront_${System.currentTimeMillis()}.jpg"
+                                        )
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            fileProviderAuthority,
+                                            photoFile
+                                        )
+                                        currentImageUri = uri
+                                        cameraLauncher.launch(uri)
+                                    } else {
+                                        cameraPermission.launchPermissionRequest()
+                                    }
                                 },
                                 enabled = !isUploadingAttachments
                             ) {
@@ -395,22 +455,31 @@ fun MeetingBottomSheet(
                                     Spacer(Modifier.width(6.dp))
                                 }
                                 androidx.compose.material3.Icon(
-                                    imageVector = Icons.Default.AttachFile,
+                                    imageVector = Icons.Default.PhotoCamera,
                                     contentDescription = null,
                                     tint = Color(0xFF5E92F3)
                                 )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Add Files", color = Color(0xFF5E92F3))
+                                Text("Capture Photo", color = Color(0xFF5E92F3))
                             }
                         }
 
-                        if (pendingAttachments.isEmpty()) {
-                            Text(
-                                text = "No files attached",
-                                style = AppTheme.typography.body2,
-                                color = Color(0xFF808080)
-                            )
-                        } else {
+                        val hasExistingAttachments = activeMeeting?.attachments?.isNotEmpty() ?: false
+                        if (pendingAttachments.isEmpty() && !hasExistingAttachments) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFFFCA28).copy(alpha = 0.1f))
+                                    .padding(12.dp)
+                            ) {
+                                Text(
+                                    text = "Please capture a photo of the client's storefront or sign to end the meeting.",
+                                    style = AppTheme.typography.body3,
+                                    color = Color(0xFFFFCA28)
+                                )
+                            }
+                        } else if (pendingAttachments.isNotEmpty()) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 pendingAttachments.forEach { attachment ->
                                     EnhancedAttachmentItem(
@@ -427,7 +496,11 @@ fun MeetingBottomSheet(
                 MeetingActionButton(
                     activeMeeting = activeMeeting,
                     isLoading = isLoading,
-                    isEnabled = isWithinProximity || activeMeeting != null, // ✅ REFINED: Proximity Gate
+                    isEnabled = if (activeMeeting == null) {
+                        isWithinProximity // ✅ Strictly enforced 50m rule
+                    } else {
+                        comments.isNotBlank() && (pendingAttachments.isNotEmpty() || activeMeeting.attachments.isNotEmpty()) 
+                    },
                     onStartMeeting = onStartMeeting,
                     onEndRequest = { showEndConfirmation = true }
                 )
@@ -454,7 +527,7 @@ fun MeetingBottomSheet(
                 comments = comments,
                 clientStatus = selectedClientStatus,
                 currentStatus = client.status,
-                attachmentCount = pendingAttachments.size,
+                attachmentCount = pendingAttachments.size + (activeMeeting?.attachments?.size ?: 0),
                 onCancel = { showEndConfirmation = false },
                 onConfirm = {
                     showEndConfirmation = false
@@ -798,6 +871,23 @@ private fun EndMeetingDialog(
                     }
                 }
 
+                // ✅ NEW: Summary Statistics
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Meeting Summary", style = AppTheme.typography.label2, color = Color.Gray)
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SummaryStatItem("Notes", if (comments.isBlank()) "None" else "${comments.length} chars", Icons.Default.Notes, Modifier.weight(1f))
+                        SummaryStatItem("Files", "$attachmentCount", Icons.Default.AttachFile, Modifier.weight(1f))
+                    }
+                }
+
+                if (comments.isNotBlank()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Recorded Notes", style = AppTheme.typography.label2, color = Color.Gray)
+                        Text(comments, style = AppTheme.typography.body2, color = Color.White, maxLines = 3)
+                    }
+                }
+
                 Text(
                     text = buildString {
                         append("Your notes")
@@ -976,6 +1066,8 @@ private fun JourneyControlCard(
     isTracking: Boolean,
     isTrackingOther: Boolean,
     distance: Double?,
+    selectedMode: String,
+    onModeChange: (String) -> Unit,
     onStartJourney: () -> Unit,
     onStopJourney: () -> Unit
 ) {
@@ -1004,6 +1096,10 @@ private fun JourneyControlCard(
                         color = if (distance != null && distance <= 50.0) Color(0xFF66BB6A) else Color.White
                     )
                 }
+            }
+
+            if (!isTracking && !isTrackingOther) {
+                TransportModeSelector(selectedMode = selectedMode, onModeChange = onModeChange)
             }
 
             if (isTrackingOther) {
@@ -1041,6 +1137,69 @@ private fun JourneyControlCard(
                     style = AppTheme.typography.body3,
                     color = Color(0xFF808080)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryStatItem(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF0D0D0D))
+            .padding(12.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            androidx.compose.material3.Icon(icon, contentDescription = null, tint = Color(0xFF5E92F3), modifier = Modifier.size(16.dp))
+            Text(value, style = AppTheme.typography.h4, color = Color.White)
+            Text(label, style = AppTheme.typography.label3, color = Color.Gray)
+        }
+    }
+}
+
+/** Utility to hold 4 related values for the transport selector. */
+
+
+@Composable
+private fun TransportModeSelector(
+    selectedMode: String,
+    onModeChange: (String) -> Unit
+) {
+    val modes = listOf(
+        Quad("🚗", "Car", Color(0xFF5E92F3), "Car"),
+        Quad("🏍️", "Bike", Color(0xFFFFCA28), "Bike"),
+        Quad("🚌", "Bus", Color(0xFF66BB6A), "Bus"),
+        Quad("🛺", "Auto", Color(0xFFAB47BC), "Auto"),
+        Quad("🚶", "Walk", Color(0xFFB0B0B0), "Walk")
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        modes.forEach { (icon, label, color, value) ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selectedMode == value) color.copy(alpha = 0.2f) else Color(0xFF1A1A1A))
+                    .clickable { onModeChange(value) }
+                    .padding(4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(icon, fontSize = 16.sp)
+                    Text(
+                        text = label, 
+                        style = AppTheme.typography.label2, 
+                        color = if (selectedMode == value) color else Color.Gray,
+                        fontSize = 10.sp
+                    )
+                }
             }
         }
     }

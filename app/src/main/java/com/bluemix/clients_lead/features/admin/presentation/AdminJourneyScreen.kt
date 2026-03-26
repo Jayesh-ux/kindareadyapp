@@ -1,11 +1,22 @@
 package com.bluemix.clients_lead.features.admin.presentation
 
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Handshake
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Directions
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -16,12 +27,23 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.zIndex
+import androidx.compose.animation.core.*
 import com.google.android.gms.maps.model.*
-import com.google.maps.android.compose.*
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Circle
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.bluemix.clients_lead.domain.model.LocationLog
 import com.bluemix.clients_lead.domain.repository.AgentLocation
 import com.bluemix.clients_lead.features.admin.vm.AdminJourneyViewModel
 import com.bluemix.clients_lead.features.admin.vm.JourneyViewMode
+import com.bluemix.clients_lead.core.common.utils.MapUtils
+import com.bluemix.clients_lead.R
+import androidx.compose.ui.platform.LocalContext
 import org.koin.androidx.compose.koinViewModel
 import ui.AppTheme
 import ui.components.Scaffold
@@ -31,6 +53,8 @@ import ui.components.topbar.TopBarDefaults
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.*
+ 
+val DefaultLocation = LatLng(19.0760, 72.8777)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,6 +65,7 @@ fun AdminJourneyScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
+    var isScrollEnabled by remember { mutableStateOf(true) }
 
     LaunchedEffect(agentId, uiState.agents) {
         if (agentId != null && uiState.agents.isNotEmpty() && uiState.selectedAgent == null) {
@@ -74,8 +99,17 @@ fun AdminJourneyScreen(
                         modifier = Modifier.weight(1f)
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val context = androidx.compose.ui.platform.LocalContext.current
                         Button(
-                            onClick = { /* Export Logic */ },
+                            onClick = { 
+                                val report = viewModel.exportJourneyReport()
+                                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Journey Report - ${uiState.selectedAgent?.fullName ?: "Agent"}")
+                                    putExtra(android.content.Intent.EXTRA_TEXT, report)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(intent, "Share Journey Report"))
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -95,6 +129,7 @@ fun AdminJourneyScreen(
         containerColor = Color(0xFF020617)
     ) { padding ->
         LazyColumn(
+            userScrollEnabled = isScrollEnabled,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
@@ -117,7 +152,9 @@ fun AdminJourneyScreen(
             // Main Content Area (Map or Summary)
             item {
                 when (uiState.viewMode) {
-                    JourneyViewMode.MAP -> MapSection(uiState)
+                    JourneyViewMode.MAP -> MapSection(uiState) { mapReceivingTouch ->
+                        isScrollEnabled = !mapReceivingTouch
+                    }
                     JourneyViewMode.SUMMARY -> SummarySection(uiState)
                 }
             }
@@ -205,14 +242,45 @@ private fun SelectionCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             // Agent Selector Dropdown-style
             Column {
-                Text("Select Agent", style = AppTheme.typography.label3, color = Color.Gray)
-                Spacer(Modifier.height(8.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     items(uiState.agents) { agent ->
                         AgentTab(
                             agent = agent,
                             isSelected = uiState.selectedAgent?.id == agent.id,
                             onClick = { onSelectAgent(agent) }
+                        )
+                    }
+                }
+            }
+
+            // ✅ NEW: Live Status Badge for selected agent
+            uiState.selectedAgent?.let { agent ->
+                val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
+                if (isOnline) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF10B981).copy(alpha = 0.1f))
+                            .border(0.5.dp, Color(0xFF10B981).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF10B981))
+                        )
+                        Text(
+                            text = "LIVE STATUS: ${agent.activity ?: "Active"}",
+                            style = AppTheme.typography.label2,
+                            color = Color(0xFF10B981),
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -348,15 +416,38 @@ private fun StatCard(label: String, value: String, subtext: String, icon: ImageV
     }
 }
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-private fun MapSection(uiState: com.bluemix.clients_lead.features.admin.vm.AdminJourneyUiState) {
+private fun MapSection(
+    uiState: com.bluemix.clients_lead.features.admin.vm.AdminJourneyUiState,
+    onMapInteraction: (Boolean) -> Unit
+) {
+    // ✅ Pulsing Animation for Live Tracking
+    val infiniteTransition = rememberInfiniteTransition(label = "pulsing")
+    val pulseSize by infiniteTransition.animateFloat(
+        initialValue = 10f,
+        targetValue = 100f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseSize"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulseAlpha"
+    )
+
+    val context = LocalContext.current
+
     val points = uiState.logs.map { LatLng(it.latitude, it.longitude) }
     val cameraPositionState = rememberCameraPositionState {
-        position = if (points.isNotEmpty()) {
-            CameraPosition.fromLatLngZoom(points.first(), 14f)
-        } else {
-            CameraPosition.fromLatLngZoom(LatLng(19.0, 72.0), 10f)
-        }
+        position = CameraPosition.fromLatLngZoom(DefaultLocation, 12f)
     }
 
     LaunchedEffect(points) {
@@ -370,58 +461,155 @@ private fun MapSection(uiState: com.bluemix.clients_lead.features.admin.vm.Admin
         color = Color(0xFF0F172A),
         shape = RoundedCornerShape(16.dp)
     ) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            uiSettings = MapUiSettings(zoomControlsEnabled = false),
-            properties = MapProperties(mapStyleOptions = MapStyleOptions(MapStyles.DARK_STYLE))
-        ) {
-            if (points.isNotEmpty()) {
-                Polyline(
-                    points = points,
-                    color = Color(0xFF3B82F6),
-                    width = 8f
-                )
-                
-                // ✅ Key Markers
-                uiState.logs.forEachIndexed { index, log ->
-                    // Show start/end markers explicitly
-                    if (index == 0) {
-                        Marker(
-                            state = MarkerState(position = LatLng(log.latitude, log.longitude)),
-                            title = "Journey Start",
-                            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
-                        )
-                    } else if (index == uiState.logs.size - 1) {
-                         Marker(
-                            state = MarkerState(position = LatLng(log.latitude, log.longitude)),
-                            title = "Journey End",
-                            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
-                        )
-                    }
-                    
-                    // Show Meeting and Clock Start/End markers
-                    if (!log.markActivity.isNullOrBlank()) {
-                        val hue = when(log.markActivity) {
-                            "MEETING_START" -> BitmapDescriptorFactory.HUE_AZURE
-                            "MEETING_END" -> BitmapDescriptorFactory.HUE_BLUE
-                            "CLOCK_IN" -> BitmapDescriptorFactory.HUE_VIOLET
-                            "CLOCK_OUT" -> BitmapDescriptorFactory.HUE_MAGENTA
-                            else -> null
+        Box(modifier = Modifier.fillMaxSize()) {
+            GoogleMap(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val down = event.changes.any { it.pressed }
+                                onMapInteraction(down)
+                            }
                         }
-                        
-                        hue?.let { h ->
+                    },
+                cameraPositionState = cameraPositionState,
+                uiSettings = MapUiSettings(zoomControlsEnabled = false),
+                properties = MapProperties(isMyLocationEnabled = true)
+            ) {
+                if (points.isNotEmpty()) {
+                    Polyline(
+                        points = points,
+                        color = Color(0xFF3B82F6),
+                        width = 8f,
+                        geodesic = true,
+                        jointType = com.google.android.gms.maps.model.JointType.ROUND
+                    )
+
+                    // ✅ Key Markers
+                    uiState.logs.forEachIndexed { index, log ->
+                        // Show start/end markers explicitly
+                        if (index == 0) {
                             Marker(
                                 state = MarkerState(position = LatLng(log.latitude, log.longitude)),
-                                title = log.markActivity.replace("_", " "),
-                                snippet = log.markNotes,
-                                icon = BitmapDescriptorFactory.defaultMarker(h)
+                                title = "Journey Start",
+                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
                             )
+                        } else if (index == uiState.logs.size - 1) {
+                             Marker(
+                                state = MarkerState(position = LatLng(log.latitude, log.longitude)),
+                                title = "Journey End",
+                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                            )
+                        }
+                        
+                        // Show Meeting and Clock Start/End markers
+                        if (!log.markActivity.isNullOrBlank()) {
+                            // ✅ VISUAL GUIDE: Filter out TRAVELING markers to reduce clutter
+                            if (log.markActivity == "TRAVELING") return@forEachIndexed
+
+                        val icon = when(log.markActivity) {
+                            "MEETING_START" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_start)
+                            "MEETING_END" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_end)
+                            "CLOCK_IN" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
+                            "CLOCK_OUT", "LOGOUT", "JOURNEY_STOP" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_stop)
+                            "JOURNEY_START", "AT_CLIENT_SITE" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_start)
+                            else -> null
+                        } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
+                        
+                        Marker(
+                            state = MarkerState(position = LatLng(log.latitude, log.longitude)),
+                            title = log.markActivity.replace("_", " "),
+                            snippet = log.markNotes ?: "At ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)}",
+                            icon = icon
+                        )
+                        }
+                    }
+
+                    // ✅ LIVE AGENT POSITION (Distinct from historical logs)
+                    if (uiState.selectedDate == java.time.LocalDate.now()) {
+                        uiState.selectedAgent?.let { agent ->
+                            if (agent.latitude != null && agent.longitude != null) {
+                                val livePos = LatLng(agent.latitude, agent.longitude)
+                                val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
+                                
+                                // ✅ NEW: Pulsing Indicator for Live Pos (Cyan/Teal)
+                                if (isOnline) {
+                                    Circle(
+                                        center = livePos,
+                                        radius = pulseSize.toDouble(),
+                                        fillColor = Color(0xFF00BCD4).copy(alpha = pulseAlpha),
+                                        strokeColor = Color(0xFF00BCD4).copy(alpha = pulseAlpha),
+                                        strokeWidth = 2f
+                                    )
+                                }
+                                
+                                Marker(
+                                    state = MarkerState(position = livePos),
+                                    title = "Current Position (${agent.activity ?: "Live"})",
+                                    snippet = if (isOnline) "Active Now · ${agent.activity ?: "Tracking"}" else "Last seen ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}",
+                                    icon = if (isOnline) {
+                                        MapUtils.vectorToBitmap(context, R.drawable.ic_marker_live)
+                                    } else {
+                                        MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
+                                    } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN),
+                                    zIndex = 20f 
+                                )
+                            }
                         }
                     }
                 }
             }
+
+            // ✅ VISUAL GUIDE: Persistent Legend Overlay
+            Box(
+                modifier = Modifier
+                    .padding(12.dp)
+                    .align(Alignment.BottomStart)
+            ) {
+                AdminMapLegend()
+            }
         }
+    }
+}
+
+@Composable
+private fun AdminMapLegend() {
+    Surface(
+        color = Color(0xFF0F172A).copy(alpha = 0.9f),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("MAP LEGEND", style = AppTheme.typography.label3, color = Color.Gray, fontWeight = FontWeight.Bold)
+            
+            LegendRow(color = Color(0xFF4CAF50), label = "Start / Arrived")
+            LegendRow(color = Color(0xFFE53935), label = "Stop / Logout")
+            LegendRow(color = Color(0xFF03A9F4), label = "Meeting Start")
+            LegendRow(color = Color(0xFF1565C0), label = "Meeting End")
+            LegendRow(color = Color(0xFF7C4DFF), label = "Clocked In / Person")
+            LegendRow(color = Color(0xFF00BCD4), label = "Live Position")
+        }
+    }
+}
+
+@Composable
+private fun LegendRow(color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Text(label, style = AppTheme.typography.label3, color = Color.White.copy(alpha = 0.9f))
     }
 }
 
@@ -435,7 +623,18 @@ private fun SummarySection(uiState: com.bluemix.clients_lead.features.admin.vm.A
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Journey Overview", style = AppTheme.typography.h4, color = Color.White)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Journey Overview", style = AppTheme.typography.h4, color = Color.White)
+                    uiState.selectedAgent?.let { agent ->
+                        if (com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)) {
+                            Badge(text = "LIVE: ${agent.activity ?: "ACTIVE"}", color = Color(0xFF10B981))
+                        }
+                    }
+                }
                 
                 if (uiState.logs.isNotEmpty()) {
                     val start = uiState.logs.first()
@@ -449,7 +648,7 @@ private fun SummarySection(uiState: com.bluemix.clients_lead.features.admin.vm.A
                         address = uiState.resolvedAddresses[start.id] ?: "Resolving..."
                     )
                     
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                    androidx.compose.material3.HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
                     
                     SummaryItem(
                         icon = Icons.Default.Flag,
@@ -665,30 +864,37 @@ private fun JourneyLogCard(log: LocationLog, uiState: com.bluemix.clients_lead.f
 
             // ✅ NEW: Activity and Notes for Admin
             if (!log.markActivity.isNullOrBlank()) {
+                val (title, icon, iconColor) = when (log.markActivity) {
+                    "MEETING_START" -> Triple("Meeting Started", Icons.Default.Groups, Color(0xFF3B82F6))
+                    "MEETING_END" -> Triple("Meeting Ended", Icons.Default.DoneAll, Color(0xFF10B981))
+                    "CLOCK_IN" -> Triple("Clocked In", Icons.Default.Login, Color(0xFF10B981))
+                    "CLOCK_OUT" -> Triple("Clocked Out", Icons.Default.Logout, Color(0xFFEF4444))
+                    "LOGOUT" -> Triple("Logged Out", Icons.Default.ExitToApp, Color(0xFFEF4444))
+                    "TRAVELING" -> Triple("Traveling", Icons.Default.DirectionsCar, Color(0xFF6B7280))
+                    "AT_CLIENT_SITE" -> Triple("At Client Site", Icons.Default.Store, Color(0xFF8B5CF6))
+                    "JOURNEY_START" -> Triple("Journey Started", Icons.Default.PlayArrow, Color(0xFF3B82F6))
+                    "JOURNEY_STOP" -> Triple("Journey Stopped", Icons.Default.Stop, Color(0xFFEF4444))
+                    else -> Triple(log.markActivity?.replace("_", " ") ?: "Location Update", Icons.Default.LocationOn, Color(0xFF3B82F6))
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF3B82F6).copy(alpha = 0.15f))
+                        .background(iconColor.copy(alpha = 0.15f))
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Icon(
-                        imageVector = when(log.markActivity) {
-                            "CLOCK_IN" -> Icons.Default.Login
-                            "CLOCK_OUT" -> Icons.Default.Logout
-                            "MEETING_START" -> Icons.Default.Handshake
-                            "MEETING_END" -> Icons.Default.DoneAll
-                            else -> Icons.Default.LocationOn
-                        },
+                        imageVector = icon,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = Color(0xFF3B82F6)
+                        tint = iconColor
                     )
                     Text(
-                        text = log.markActivity.replace("_", " "),
+                        text = title,
                         style = AppTheme.typography.label2,
-                        color = Color(0xFF3B82F6),
+                        color = iconColor,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -703,5 +909,23 @@ private fun JourneyLogCard(log: LocationLog, uiState: com.bluemix.clients_lead.f
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun Badge(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color.copy(alpha = 0.15f))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        androidx.compose.material3.Text(
+            text = text,
+            color = color,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp
+        )
     }
 }

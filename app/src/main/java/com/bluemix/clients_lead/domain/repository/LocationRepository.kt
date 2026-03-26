@@ -71,7 +71,9 @@ interface ILocationRepository {
     suspend fun getLocationLogsByDateRange(
         userId: String,
         startDate: String,
-        endDate: String
+        endDate: String,
+        limit: Int = 100,
+        page: Int = 1
     ): AppResult<List<LocationLog>>
 
     /**

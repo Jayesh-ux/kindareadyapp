@@ -10,6 +10,7 @@ import com.bluemix.clients_lead.domain.model.Meeting
 import com.bluemix.clients_lead.domain.model.ProximityResult
 import com.bluemix.clients_lead.domain.usecases.*
 import com.bluemix.clients_lead.features.location.LocationManager
+import com.bluemix.clients_lead.features.location.BatteryUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,7 +48,8 @@ data class MeetingUiState(
     val uploadProgress: Float = 0f,
     val isUploadingAttachments: Boolean = false,
     val pendingAttachments: List<AttachmentInfo> = emptyList(),
-    val proximityState: ProximityVerificationState = ProximityVerificationState.None  // ✅ NEW
+    val proximityState: ProximityVerificationState = ProximityVerificationState.None,
+    val comments: String = "" // ✅ NEW: Persistent notes/comments
 )
 
 class MeetingViewModel(
@@ -56,7 +58,7 @@ class MeetingViewModel(
     private val getActiveMeetingForClient: GetActiveMeetingForClient,
     private val uploadMeetingAttachment: UploadMeetingAttachment,
     private val getCurrentUserId: GetCurrentUserId,
-    private val insertLocationLog: InsertLocationLog,
+    private val insertLocationLogUseCase: InsertLocationLog,
     private val trackingManager: com.bluemix.clients_lead.features.location.LocationTrackingManager,
     private val context: Context
 ) : ViewModel() {
@@ -75,6 +77,7 @@ class MeetingViewModel(
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         activeMeeting = result.data,
+                        comments = result.data?.comments ?: _uiState.value.comments, // ✅ Populate but keep draft if exists
                         error = null
                     )
                 }
@@ -116,11 +119,12 @@ class MeetingViewModel(
                     // ✅ Log activity in LocationLog table
                     viewModelScope.launch {
                         val userId = getCurrentUserId() ?: return@launch
-                        insertLocationLog(
+                        insertLocationLogUseCase(
                             userId = userId,
                             latitude = latitude ?: 0.0,
                             longitude = longitude ?: 0.0,
                             accuracy = accuracy,
+                            battery = BatteryUtils.getBatteryPercentage(context),
                             clientId = clientId,
                             markActivity = "MEETING_START",
                             markNotes = "Meeting started with client: $clientId"
@@ -288,11 +292,12 @@ class MeetingViewModel(
                     // ✅ Log activity in LocationLog table
                     viewModelScope.launch {
                         val userId = getCurrentUserId() ?: return@launch
-                        insertLocationLog(
+                        insertLocationLogUseCase(
                             userId = userId,
                             latitude = endLatitude ?: 0.0,
                             longitude = endLongitude ?: 0.0,
                             accuracy = endAccuracy,
+                            battery = BatteryUtils.getBatteryPercentage(context),
                             clientId = meeting.clientId,
                             markActivity = "MEETING_END",
                             markNotes = "Meeting ended with status: $clientStatus. Comments: $comments"
@@ -416,6 +421,10 @@ class MeetingViewModel(
             }
         }
         return size / (1024.0 * 1024.0) // Convert to MB
+    }
+
+    fun updateComments(newComments: String) {
+        _uiState.value = _uiState.value.copy(comments = newComments)
     }
 
     fun clearError() {

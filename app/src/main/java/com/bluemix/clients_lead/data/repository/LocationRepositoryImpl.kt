@@ -69,13 +69,17 @@ class LocationRepositoryImpl(
     override suspend fun getLocationLogsByDateRange(
         userId: String,
         startDate: String,
-        endDate: String
+        endDate: String,
+        limit: Int,
+        page: Int
     ): AppResult<List<LocationLog>> = withContext(Dispatchers.IO) {
         runAppCatching(mapper = { it.toAppError() }) {
             val response = httpClient.get(ApiEndpoints.Location.LOGS) {
                 parameter("userId", userId)
                 parameter("startDate", startDate)
                 parameter("endDate", endDate)
+                parameter("limit", limit)
+                parameter("page", page)
             }.body<LocationLogsResponse>()
 
             response.logs.map { it.toLocationLogDto() }.toDomain()

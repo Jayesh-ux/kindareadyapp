@@ -22,6 +22,7 @@ data class AdminDashboardUiState(
     val gpsVerifiedCount: Int = 0, // Now Percentage
     val coveragePercent: Int = 0,
     val activeAgentsCount: Int = 0,
+    val hiddenClientsCount: Int = 0,
     val isClearingLogs: Boolean = false,
     val error: String? = null
 )
@@ -29,7 +30,8 @@ data class AdminDashboardUiState(
 class AdminDashboardViewModel(
     private val getTeamLocations: GetTeamLocations,
     private val getDashboardStats: GetDashboardStats,
-    private val deleteOldLocationLogs: com.bluemix.clients_lead.domain.usecases.DeleteOldLocationLogs
+    private val deleteOldLocationLogs: com.bluemix.clients_lead.domain.usecases.DeleteOldLocationLogs,
+    private val retryGeocodingUseCase: com.bluemix.clients_lead.domain.usecases.RetryGeocoding
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AdminDashboardUiState())
@@ -46,7 +48,7 @@ class AdminDashboardViewModel(
         refreshJob = viewModelScope.launch {
             while (true) {
                 refreshDashboard()
-                delay(30000) // ✅ 30s Real-time sync
+                delay(10000) // ✅ Faster 10s Real-time sync
             }
         }
     }
@@ -70,7 +72,8 @@ class AdminDashboardViewModel(
                                 totalClients = stats.totalClients,
                                 activeAgentsCount = stats.activeAgents,
                                 gpsVerifiedCount = stats.gpsVerified,
-                                coveragePercent = stats.coverage
+                                coveragePercent = stats.coverage,
+                                hiddenClientsCount = stats.hiddenClients
                             )
                         }
                     }
@@ -116,4 +119,21 @@ class AdminDashboardViewModel(
             }
         }
     }
+
+    fun retryGeocoding() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            when (val result = retryGeocodingUseCase()) {
+                is AppResult.Success -> {
+                    // Give backend some time to process
+                    delay(2000)
+                    refreshDashboard()
+                }
+                is AppResult.Error -> {
+                    _uiState.update { it.copy(isLoading = false, error = result.error.message) }
+                }
+            }
+        }
+    }
 }
+

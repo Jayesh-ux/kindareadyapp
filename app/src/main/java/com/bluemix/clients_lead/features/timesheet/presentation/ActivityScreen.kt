@@ -75,23 +75,51 @@ fun ActivityScreen(
                             color = AppTheme.colors.text
                         )
 
-                        // Stats Badge
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(AppTheme.colors.primary.copy(alpha = 0.1f))
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            ui.components.Text(
-                                text = when (uiState.selectedTab) {
-                                    0 -> "${uiState.logs.size} Logs"
-                                    1 -> "${String.format("%.1f", uiState.totalDistanceKm)} KM"
-                                    2 -> "${uiState.meetings.size} Meetings"
-                                    else -> "${uiState.services.size} Services"
-                                },
-                                style = AppTheme.typography.label2,
-                                color = AppTheme.colors.primary
-                            )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // Admin toggle: All Agents / My Activity
+                            if (uiState.isAdmin) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (uiState.showAllAgents) Color(0xFF10B981).copy(alpha = 0.2f) else AppTheme.colors.surface)
+                                        .clickable { viewModel.toggleAllAgents() }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Icon(
+                                            imageVector = if (uiState.showAllAgents) Icons.Default.Groups else Icons.Default.Person,
+                                            contentDescription = null,
+                                            tint = if (uiState.showAllAgents) Color(0xFF10B981) else AppTheme.colors.textSecondary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = if (uiState.showAllAgents) "All" else "Me",
+                                            fontSize = 11.sp,
+                                            color = if (uiState.showAllAgents) Color(0xFF10B981) else AppTheme.colors.textSecondary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Stats Badge
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(AppTheme.colors.primary.copy(alpha = 0.1f))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                ui.components.Text(
+                                    text = when (uiState.selectedTab) {
+                                        0 -> "${uiState.logs.size} Logs"
+                                        1 -> "${String.format("%.1f", uiState.totalDistanceKm)} KM"
+                                        2 -> "${uiState.meetings.size} Meetings"
+                                        else -> "${uiState.services.size} Services"
+                                    },
+                                    style = AppTheme.typography.label2,
+                                    color = AppTheme.colors.primary
+                                )
+                            }
                         }
                     }
 
@@ -327,7 +355,7 @@ private fun MeetingCard(meeting: Meeting) {
 
             // Comments (if any)
             if (!meeting.comments.isNullOrBlank()) {
-                HorizontalDivider(color = AppTheme.colors.outline.copy(alpha = 0.3f))
+                androidx.compose.material3.HorizontalDivider(color = AppTheme.colors.outline.copy(alpha = 0.3f))
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(Icons.Default.Comment, contentDescription = null, tint = AppTheme.colors.textSecondary, modifier = Modifier.size(14.dp).padding(top = 2.dp))
                     Text(
@@ -380,7 +408,7 @@ private fun ServiceCard(service: ClientService, onAccept: () -> Unit) {
             }
 
             Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = AppTheme.colors.outline.copy(alpha = 0.5f))
+            androidx.compose.material3.HorizontalDivider(color = AppTheme.colors.outline.copy(alpha = 0.5f))
             Spacer(Modifier.height(12.dp))
 
             InfoRow(Icons.Default.Person, "Client", service.clientName)
@@ -458,12 +486,86 @@ private fun EmptyContent(paddingValues: PaddingValues, title: String, subtitle: 
 
 @Composable
 private fun AnimatedActivityContent(paddingValues: PaddingValues, logs: List<LocationLog>, viewModel: ActivityViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // ✅ NEW: Trigger pagination when reaching end of list
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val totalItemsCount = listState.layoutInfo.totalItemsCount
+            val lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisibleItemIndex >= totalItemsCount - 5 && !uiState.isLoading && !uiState.isEndReached
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value) {
+            viewModel.loadDailySummary(isRefresh = false)
+        }
+    }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(paddingValues),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        itemsIndexed(logs, key = { _, log -> log.id }) { index, log ->
-            TimelineLocationLogItem(log, index, index == logs.lastIndex, viewModel)
+        if (uiState.isAdmin && uiState.showAllAgents) {
+            // ✅ Bifurcate by email for Admins
+            val groupedLogs = logs.groupBy { it.userEmail ?: "Unknown Agent (${it.userId})" }
+            
+            groupedLogs.forEach { (email, agentLogs) ->
+                item(key = email) {
+                    // Agent Header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF10B981).copy(alpha = 0.1f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = email,
+                            style = AppTheme.typography.h4,
+                            color = Color(0xFF10B981)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "${agentLogs.size} logs",
+                            style = AppTheme.typography.label3,
+                            color = AppTheme.colors.textSecondary
+                        )
+                    }
+                }
+                
+                itemsIndexed(agentLogs, key = { _, log -> log.id }) { index, log ->
+                    TimelineLocationLogItem(log, index, index == agentLogs.lastIndex && uiState.isEndReached, viewModel)
+                }
+            }
+        } else {
+            // ✅ Standard single-agent timeline
+            itemsIndexed(logs, key = { _, log -> log.id }) { index, log ->
+                TimelineLocationLogItem(log, index, index == logs.lastIndex && uiState.isEndReached, viewModel)
+            }
+        }
+
+        // ✅ NEW: Loading Indicator at bottom
+        if (uiState.isLoading && logs.isNotEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = AppTheme.colors.primary,
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
         }
     }
 }

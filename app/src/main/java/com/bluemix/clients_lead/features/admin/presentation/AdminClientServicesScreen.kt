@@ -234,7 +234,7 @@ private fun ServiceItemCard(service: ClientService) {
                 }
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+            androidx.compose.material3.HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

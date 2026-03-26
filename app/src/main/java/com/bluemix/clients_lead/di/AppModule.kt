@@ -62,10 +62,11 @@ val appModule = module {
             getTeamLocations = get(),      // from clientModule
             observeAuthState = get(),      // from authModule
             searchRemoteClients = get(),   // from clientModule (NEW)
-            insertLocationLog = get(),     // ✅ NEW
+            insertLocationLogUseCase = get(),     // ✅ NEW
             createClient = get(),          // ✅ NEW: For seeding test data
             signOut = get(),                // ✅ NEW: For logout functionality
-            context = androidContext()
+            context = androidContext(),
+            getLocationLogsByDateRange = get() // ✅ NEW: For "Whole Day" overlay
         )
     }
 }

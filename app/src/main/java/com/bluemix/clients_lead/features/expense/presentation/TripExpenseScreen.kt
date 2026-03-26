@@ -431,11 +431,8 @@ fun TripExpenseSheet(
                 SectionCard(title = "Expense Details") {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         OutlinedTextField(
-                            value = if (uiState.amountSpent == 0.0) "" else uiState.amountSpent.toString(),
-                            onValueChange = {
-                                if (it.isEmpty()) viewModel.updateAmount(0.0)
-                                else it.toDoubleOrNull()?.let { amt -> viewModel.updateAmount(amt) }
-                            },
+                            value = uiState.amountSpentString,
+                            onValueChange = { viewModel.updateAmount(it) },
                             label = { Text("Amount Spent", color = Color(0xFFB0B0B0)) },
                             placeholder = { Text("0.00", color = Color(0xFF606060)) },
                             leadingIcon = {
@@ -445,7 +442,10 @@ fun TripExpenseSheet(
                                     tint = Color(0xFF5E92F3)
                                 )
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                            )
                         )
 
                         OutlinedTextField(
@@ -689,16 +689,16 @@ private fun TransportModeCard(
             .background(
                 when {
                     !isEnabled -> Color(0xFF0D0D0D)
-                    isSelected -> Color(0xFF2962FF).copy(alpha = 0.2f)
-                    else -> Color(0xFF1A1A1A)
+                    isSelected -> Color(0xFF2962FF) // Vibrant blue for selected
+                    else -> Color(0xFF2A2A2A)
                 }
             )
             .border(
                 width = if (isSelected) 2.dp else 1.dp,
                 color = when {
                     !isEnabled -> Color(0xFF404040)
-                    isSelected -> Color(0xFF5E92F3)
-                    else -> Color(0xFF303030)
+                    isSelected -> Color.White // White border for selected
+                    else -> Color(0xFF404040)
                 },
                 shape = RoundedCornerShape(16.dp)
             )
@@ -715,8 +715,8 @@ private fun TransportModeCard(
                 contentDescription = label,
                 tint = when {
                     !isEnabled -> Color(0xFF404040)
-                    isSelected -> Color(0xFF5E92F3)
-                    else -> Color(0xFF808080)
+                    isSelected -> Color.White // White icons for selected
+                    else -> Color(0xFFB0B0B0) // Light-gray icons
                 },
                 modifier = Modifier.size(36.dp)
             )
@@ -725,9 +725,10 @@ private fun TransportModeCard(
                 style = AppTheme.typography.body1,
                 color = when {
                     !isEnabled -> Color(0xFF404040)
-                    isSelected -> Color(0xFF5E92F3)
-                    else -> Color.White
-                }
+                    isSelected -> Color.White // White text for selected
+                    else -> Color(0xFFB0B0B0)
+                },
+                fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
             )
         }
 

@@ -75,3 +75,9 @@ class CreateClient(
         longitude = longitude
     )
 }
+
+class RetryGeocoding(
+    private val repository: IClientRepository
+) {
+    suspend operator fun invoke(): AppResult<Unit> = repository.retryGeocoding()
+}

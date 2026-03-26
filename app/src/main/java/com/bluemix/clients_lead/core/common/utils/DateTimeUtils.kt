@@ -41,7 +41,7 @@ object DateTimeUtils {
         val date = parseDate(timestamp) ?: return false
         val now = System.currentTimeMillis()
         val diff = Math.abs(now - date.time)
-        return diff < TimeUnit.MINUTES.toMillis(3) // Reduced from 10 to 3 for better real-time accuracy
+        return diff < TimeUnit.MINUTES.toMillis(10) // Increased from 5 to 10 for better stability
     }
 
     /**

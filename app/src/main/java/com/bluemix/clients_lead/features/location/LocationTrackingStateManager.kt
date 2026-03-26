@@ -130,8 +130,14 @@ class LocationTrackingStateManager(
         }
     }
 
-    fun updateActiveClient(clientId: String?) {
-        trackingManager.updateActiveClient(clientId)
+    fun updateActiveClient(
+        clientId: String?,
+        clientName: String? = null,
+        transportMode: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null
+    ) {
+        trackingManager.updateActiveClient(clientId, clientName, transportMode, latitude, longitude)
     }
 
     fun updateTrackingState() {

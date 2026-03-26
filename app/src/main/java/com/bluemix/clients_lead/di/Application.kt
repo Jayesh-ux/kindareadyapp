@@ -37,7 +37,8 @@ class App : Application() {
                 profileModule,
                 expenseModule,
                 meetingModule,
-                adminModule
+                adminModule,
+                paymentModule
             )
         }
 

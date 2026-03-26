@@ -86,23 +86,65 @@ class LocationSearchRepository(
         }
 
         return try {
-            // Rate limiting: 1 request/second
-            delay(1000)
+            // Rate limiting: faster response
+            delay(300)
 
             val results = nominatimApi.searchPlaces(
                 query = query,
                 limit = 20
             )
 
-            results.map { result ->
+            val nominatimPlaces = results.map { result ->
                 LocationPlace(
                     displayName = result.displayName,
                     latitude = result.lat.toDouble(),
                     longitude = result.lon.toDouble()
                 )
             }
+
+            // ✅ Geocoder fallback if Nominatim returns few results
+            if (nominatimPlaces.size < 3) {
+                val geocoderPlaces = searchWithGeocoder(query)
+                val combined = nominatimPlaces.toMutableList()
+                geocoderPlaces.forEach { geoPlace ->
+                    if (combined.none { it.displayName == geoPlace.displayName }) {
+                        combined.add(geoPlace)
+                    }
+                }
+                combined
+            } else {
+                nominatimPlaces
+            }
         } catch (e: Exception) {
-            Timber.e(e, "❌ Search failed")
+            Timber.e(e, "❌ Nominatim search failed, trying Geocoder")
+            searchWithGeocoder(query)
+        }
+    }
+
+    private suspend fun searchWithGeocoder(query: String): List<LocationPlace> {
+        return try {
+            val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
+            val addresses = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                @Suppress("DEPRECATION")
+                geocoder.getFromLocationName(query, 10) ?: emptyList()
+            }
+            addresses.mapNotNull { addr ->
+                if (addr.hasLatitude() && addr.hasLongitude()) {
+                    val name = buildString {
+                        for (i in 0..addr.maxAddressLineIndex) {
+                            if (i > 0) append(", ")
+                            append(addr.getAddressLine(i))
+                        }
+                    }
+                    LocationPlace(
+                        displayName = name.ifBlank { "${addr.latitude}, ${addr.longitude}" },
+                        latitude = addr.latitude,
+                        longitude = addr.longitude
+                    )
+                } else null
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Geocoder search also failed")
             emptyList()
         }
     }

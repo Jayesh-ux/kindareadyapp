@@ -51,6 +51,7 @@ data class TripExpenseUiState(
     val estimatedDuration: Int = 0,
     val transportMode: TransportMode = TransportMode.BUS,
     val amountSpent: Double = 0.0,
+    val amountSpentString: String = "", // ✅ NEW: UI-friendly string state
     val notes: String = "",
 
     // Route visualization
@@ -89,7 +90,8 @@ class TripExpenseViewModel(
     private val uploadReceipt: UploadReceiptUseCase,
     private val sessionManager: SessionManager,
     private val locationSearchRepo: LocationSearchRepository,
-    private val draftRepository: DraftExpenseRepository
+    private val draftRepository: DraftExpenseRepository,
+    private val insertLocationLogUseCase: com.bluemix.clients_lead.domain.usecases.InsertLocationLog // S10: For activity logging
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TripExpenseUiState())
@@ -233,6 +235,7 @@ class TripExpenseViewModel(
                         distanceKm = draft.distanceKm,
                         transportMode = draft.transportMode.toTransportMode(),  // ✅ Convert to TransportMode
                         amountSpent = draft.amountSpent,
+                        amountSpentString = if (draft.amountSpent > 0) draft.amountSpent.toString() else "",
                         notes = draft.notes ?: "",
                         receiptImages = draft.receiptImages,
                         lastSaved = draft.lastModified,
@@ -440,8 +443,12 @@ class TripExpenseViewModel(
         }
     }
 
-    fun updateAmount(amount: Double) {
-        _uiState.value = _uiState.value.copy(amountSpent = amount)
+    fun updateAmount(amountStr: String) {
+        val amount = amountStr.toDoubleOrNull() ?: 0.0
+        _uiState.value = _uiState.value.copy(
+            amountSpent = amount,
+            amountSpentString = amountStr
+        )
     }
 
     fun updateNotes(notes: String) {
@@ -634,6 +641,23 @@ class TripExpenseViewModel(
                 when (val result = submitExpense(expense)) {
                     is AppResult.Success -> {
                         Timber.i("✅ Expense submitted successfully")
+
+                        // S10: Log expense submission as trackable activity
+                        viewModelScope.launch {
+                            try {
+                                val startLat = state.startLocation?.latitude ?: 0.0
+                                val startLng = state.startLocation?.longitude ?: 0.0
+                                insertLocationLogUseCase(
+                                    userId = userId,
+                                    latitude = startLat,
+                                    longitude = startLng,
+                                    markActivity = "EXPENSE_SUBMITTED",
+                                    markNotes = "Expense: ${state.startLocation?.displayName} → ${state.endLocation?.displayName} | ${String.format("%.1f", state.distanceKm)} km | ${state.transportMode} | ₹${state.amountSpent.toInt()}"
+                                )
+                            } catch (e: Exception) {
+                                Timber.e(e, "Failed to log expense activity")
+                            }
+                        }
 
                         // Delete draft after successful submission
                         state.currentDraftId?.let { draftId ->

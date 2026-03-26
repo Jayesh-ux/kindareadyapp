@@ -326,8 +326,18 @@ class ClientRepositoryImpl(
                     activeAgents = response.activeAgents,
                     totalClients = response.totalClients,
                     gpsVerified = response.gpsVerified,
-                    coverage = response.coverage
+                    coverage = response.coverage,
+                    hiddenClients = response.hiddenClients
                 )
+            }
+        }
+
+    override suspend fun retryGeocoding(): AppResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runAppCatching(mapper = { it.toAppError() }) {
+                Log.d("CLIENT_REPO", "🔄 Requesting geocoding retry...")
+                httpClient.post(ApiEndpoints.Clients.RETRY_GEOCODING)
+                Unit
             }
         }
 }
@@ -339,7 +349,8 @@ data class DashboardStatsDto(
     val activeAgents: Int,
     val totalClients: Int,
     val gpsVerified: Int,
-    val coverage: Int
+    val coverage: Int,
+    val hiddenClients: Int = 0
 )
 
 @Serializable
@@ -434,21 +445,28 @@ data class AgentLocationDto(
     val timestamp: String? = null, 
     val activity: String? = null, 
     val battery: Int? = null,
-    val isActive: Boolean? = null
+    val isActive: Boolean? = null,
+    val markNotes: String? = null // S7: Used to parse structured context (client name, transport mode)
 )
 
-fun AgentLocationDto.toDomain() = com.bluemix.clients_lead.domain.repository.AgentLocation(
-    id = id, 
-    email = email, 
-    fullName = fullName, 
-    latitude = latitude, 
-    longitude = longitude, 
-    accuracy = accuracy, 
-    timestamp = timestamp, 
-    activity = activity, 
-    battery = battery,
-    isActive = isActive ?: true
-)
+fun AgentLocationDto.toDomain(): com.bluemix.clients_lead.domain.repository.AgentLocation {
+    val (clientName, transportMode, currentActivity) = com.bluemix.clients_lead.domain.repository.AgentLocation.parseContext(activity, markNotes)
+    return com.bluemix.clients_lead.domain.repository.AgentLocation(
+        id = id,
+        email = email,
+        fullName = fullName,
+        latitude = latitude,
+        longitude = longitude,
+        accuracy = accuracy,
+        timestamp = timestamp,
+        activity = activity,
+        battery = battery,
+        isActive = isActive ?: true,
+        currentClientName = clientName,
+        transportMode = transportMode,
+        currentActivity = currentActivity
+    )
+}
 
 @Serializable
 data class ClientServicesResponse(val services: List<ClientServiceDto>)

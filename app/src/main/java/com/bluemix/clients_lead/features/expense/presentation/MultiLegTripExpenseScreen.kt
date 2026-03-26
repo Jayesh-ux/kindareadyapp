@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -56,6 +57,10 @@ import com.bluemix.clients_lead.domain.model.LocationPlace
 import com.bluemix.clients_lead.domain.model.TransportMode
 import com.bluemix.clients_lead.features.expense.presentation.components.MiniRouteMap
 import com.bluemix.clients_lead.features.expense.vm.MultiLegExpenseViewModel
+import com.bluemix.clients_lead.features.expense.vm.MultiLegTripUiState
+import com.bluemix.clients_lead.features.expense.vm.TripLegUiModel
+import ui.AppTheme
+import ui.components.Text
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -68,8 +73,6 @@ import com.google.maps.android.compose.*
 import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 import timber.log.Timber
-import ui.AppTheme
-import ui.components.Text
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -265,24 +268,34 @@ fun MultiLegTripExpenseSheet(
                     )
 
                     Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    // VALIDATION FEEDBACK (placed at bottom of scrollable area)
+                    if (!uiState.canSubmit && uiState.hasUnsavedChanges && !uiState.isSubmitting) {
+                         ValidationChecklist(state = uiState)
+                    }
+
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
 
-            AnimatedVisibility(
-                visible = uiState.canSubmit || uiState.isSubmitting,
+            // SUBMIT BUTTON (Always visible for better discovery)
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(bottom = 24.dp, end = 24.dp),
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
+                    .padding(bottom = 24.dp, end = 24.dp)
             ) {
                 FloatingActionButton(
                     onClick = {
-                        viewModel.submitExpense { onDismiss() }
+                        if (uiState.canSubmit) {
+                            viewModel.submitExpense { onDismiss() }
+                        } else {
+                            viewModel.setError("Please complete all required fields (Trip Name, Locations, Distance > 0)")
+                        }
                     },
-                    containerColor = Color(0xFF5E92F3),
-                    contentColor = Color.White,
-                    elevation = FloatingActionButtonDefaults.elevation(8.dp),
+                    containerColor = if (uiState.canSubmit) Color(0xFF5E92F3) else Color(0xFF404040),
+                    contentColor = if (uiState.canSubmit) Color.White else Color(0xFF808080),
+                    elevation = FloatingActionButtonDefaults.elevation(if (uiState.canSubmit) 8.dp else 2.dp),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     if (uiState.isSubmitting) {
@@ -300,47 +313,86 @@ fun MultiLegTripExpenseSheet(
                     }
                 }
             }
+
+            // DIALOGS & OVERLAYS (S7/S10/S11 Support)
+            if (showImagePickerDialog) {
+                ImagePickerDialog(
+                    onDismiss = { showImagePickerDialog = false },
+                    onCameraClick = {
+                        showImagePickerDialog = false
+                        if (cameraPermission.status.isGranted) {
+                            val photoFile = File(context.cacheDir, "temp_photo_${System.currentTimeMillis()}.jpg")
+                            currentImageUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
+                            cameraLauncher.launch(currentImageUri!!)
+                        } else {
+                            cameraPermission.launchPermissionRequest()
+                        }
+                    },
+                    onGalleryClick = {
+                        showImagePickerDialog = false
+                        galleryLauncher.launch("image/*")
+                    }
+                )
+            }
+
+            if (uiState.isProcessingImage) {
+                ImageProcessingOverlay(progress = uiState.imageProcessingProgress)
+            }
+            if (uiState.showDraftsList) {
+                DraftExpenseListScreen(
+                    drafts = uiState.availableDrafts,
+                    onDraftClick = { draftId ->
+                        viewModel.toggleDraftsList()
+                        viewModel.loadDraft(draftId)
+                    },
+                    onDeleteDraft = { draftId ->
+                        viewModel.deleteDraft(draftId)
+                    },
+                    onDismiss = { viewModel.toggleDraftsList() }
+                )
+            }
         }
     }
-
-    if (showImagePickerDialog) {
-        ImagePickerDialog(
-            onDismiss = { showImagePickerDialog = false },
-            onCameraClick = {
-                showImagePickerDialog = false
-                if (cameraPermission.status.isGranted) {
-                    val photoFile = File(context.cacheDir, "temp_photo_${System.currentTimeMillis()}.jpg")
-                    currentImageUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile)
-                    cameraLauncher.launch(currentImageUri!!)
-                } else {
-                    cameraPermission.launchPermissionRequest()
-                }
-            },
-            onGalleryClick = {
-                showImagePickerDialog = false
-                galleryLauncher.launch("image/*")
-            }
-        )
-    }
-
-    if (uiState.isProcessingImage) {
-        ImageProcessingOverlay(progress = uiState.imageProcessingProgress)
-    }
-    if (uiState.showDraftsList) {
-        DraftExpenseListScreen(
-            drafts = uiState.availableDrafts,
-            onDraftClick = { draftId ->
-                viewModel.toggleDraftsList()
-                viewModel.loadDraft(draftId)
-            },
-            onDeleteDraft = { draftId ->
-                viewModel.deleteDraft(draftId)
-            },
-            onDismiss = { viewModel.toggleDraftsList() }
-        )
-    }
-
 }
+
+@Composable
+private fun ValidationChecklist(state: MultiLegTripUiState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFE91E63).copy(alpha = 0.1f)),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0xFFE91E63).copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Info, null, tint = Color(0xFFE91E63), modifier = Modifier.size(18.dp))
+                Text("Missing Requirements", style = AppTheme.typography.h4, color = Color(0xFFE91E63))
+            }
+            
+            if (state.tripName.isBlank()) {
+                ValidationItem("Trip name is required")
+            }
+            if (state.legs.isEmpty()) {
+                ValidationItem("At least one journey leg is required")
+            }
+            state.legs.forEachIndexed { index, leg ->
+                if (leg.startLocation == null || leg.endLocation == null || leg.distanceKm <= 0) {
+                    ValidationItem("Leg ${index + 1}: Complete start/end locations and distance")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ValidationItem(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(modifier = Modifier.size(4.dp).background(Color(0xFFE91E63), CircleShape))
+        Text(text, style = AppTheme.typography.body2, color = Color(0xFFB0B0B0))
+    }
+}
+
+
 
 
 @Composable
@@ -524,14 +576,14 @@ private fun LegEditor(
 
             // AMOUNT
             OutlinedTextField(
-                value = if (leg.amountSpent == 0.0) "" else leg.amountSpent.toString(),
-                onValueChange = {
-                    if (it.isEmpty()) viewModel.updateLegAmount(legIndex, 0.0)
-                    else it.toDoubleOrNull()?.let { amt -> viewModel.updateLegAmount(legIndex, amt) }
-                },
+                value = leg.amountSpentString,
+                onValueChange = { viewModel.updateLegAmount(legIndex, it) },
                 label = { Text("Amount Spent", color = Color(0xFFB0B0B0)) },
                 leadingIcon = { Icon(Icons.Default.CurrencyRupee, null, tint = Color(0xFF5E92F3)) },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                )
             )
 
             // NOTES
@@ -588,10 +640,10 @@ private fun TransportModeCard(
         modifier = Modifier
             .aspectRatio(1.3f)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isSelected) Color(0xFF2962FF).copy(alpha = 0.2f) else Color(0xFF1A1A1A))
+            .background(if (isSelected) Color(0xFF2962FF) else Color(0xFF2A2A2A)) // Vibrant blue for selected
             .border(
                 width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) Color(0xFF5E92F3) else Color(0xFF303030),
+                color = if (isSelected) Color.White else Color(0xFF404040), // White border for selected
                 shape = RoundedCornerShape(16.dp)
             )
             .clickable(onClick = onClick)
@@ -602,8 +654,18 @@ private fun TransportModeCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(icon, label, tint = if (isSelected) Color(0xFF5E92F3) else Color(0xFF808080), modifier = Modifier.size(36.dp))
-            Text(label, style = AppTheme.typography.body1, color = if (isSelected) Color(0xFF5E92F3) else Color.White)
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (isSelected) Color.White else Color(0xFFB0B0B0), // White/Light-gray for icons
+                modifier = Modifier.size(36.dp)
+            )
+            Text(
+                text = label,
+                style = AppTheme.typography.body1,
+                color = if (isSelected) Color.White else Color(0xFFB0B0B0), // White/Light-gray for text
+                fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
+            )
         }
     }
 }

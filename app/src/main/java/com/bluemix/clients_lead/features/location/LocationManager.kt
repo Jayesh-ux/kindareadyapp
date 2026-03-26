@@ -140,20 +140,20 @@ class LocationManager(
             override fun onLocationResult(result: LocationResult) {
                 super.onLocationResult(result)
                 result.locations.lastOrNull()?.let { location ->
-                    // ✅ Requirement 8: GPS Validation - Ignore if accuracy > 50 meters
-                    if (location.accuracy <= 50f) {
+                    // ✅ GPS Validation - Ignore if accuracy > 150 meters (Relaxed to avoid dropping valid points)
+                    if (location.accuracy <= 150f) {
                         trySend(location).isSuccess
                     } else {
-                        Timber.tag("GPS").w("Ignoring inaccurate location: ${location.accuracy}m")
+                        Timber.tag("GPS").w("Ignoring highly inaccurate location: ${location.accuracy}m")
                     }
                 }
             }
         }
 
         val request = LocationRequest.Builder(priority, 300000L) // 5 minutes interval
-            .setMinUpdateIntervalMillis(120000L) // 2 minutes minimum
-            .setMinUpdateDistanceMeters(100f)  // 🏃 Update ONLY if moved 100m (Battery Saving)
-            .setWaitForAccurateLocation(true) // Wait for accurate location
+            .setMinUpdateIntervalMillis(60000L) // 1 minute minimum interval
+            .setMinUpdateDistanceMeters(50f)  // 🏃 Update ONLY if moved 50m (Movement-Based Battery Saving)
+            .setWaitForAccurateLocation(false) 
             .build()
 
         try {

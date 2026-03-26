@@ -19,7 +19,8 @@ data class Meeting(
     val updatedAt: String,
     val proximity: ProximityResult? = null,
     val clientName: String? = null,     // ✅ NEW: Read-only display info
-    val clientAddress: String? = null  // ✅ NEW: Read-only display info
+    val clientAddress: String? = null,  // ✅ NEW: Read-only display info
+    val agentName: String? = null      // ✅ NEW: Read-only display info
 )
 
 /**
