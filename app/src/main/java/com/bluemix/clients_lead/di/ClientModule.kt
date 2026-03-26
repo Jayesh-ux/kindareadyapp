@@ -47,6 +47,7 @@ val clientModule = module {
         SearchRemoteClients(repository = get())
     }
     factory { UpdateClientAddress(repository = get()) }
+    factory { UpdateClientLocation(clientRepository = get()) }
     factory { CreateClient(repository = get()) }
     factory { GetTeamLocations(repository = get()) }
     factory { UpdateUserStatus(repository = get()) }

@@ -1493,6 +1493,14 @@ private fun TrackingBenefitItem(text: String) {
                                 maxLines = 4
                             )
 
+                            // ✅ NEW: Phase 4 Hint
+                            Text(
+                                text = "💡 Updating address will automatically retrieve new GPS coordinates.",
+                                style = AppTheme.typography.label2,
+                                color = AppTheme.colors.primary.copy(alpha = 0.8f),
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1648,6 +1656,31 @@ private fun TrackingBenefitItem(text: String) {
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    // ✅ NEW: Phase 1 GPS Tagging
+                    // Visible to Agents only when client has missing coordinates
+                    val isLocationMissing = client.latitude == null || client.longitude == null
+                    if (isLocationMissing && !uiState.isAdmin && !isLocationUnavailable) {
+                        Button(
+                            onClick = { viewModel.tagLocation(client.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF10B981) // Emerald Green
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MyLocation,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Tag Current GPS",
+                                style = AppTheme.typography.button
+                            )
                         }
                     }
 

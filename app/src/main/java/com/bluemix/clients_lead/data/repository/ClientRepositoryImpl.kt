@@ -66,6 +66,7 @@ class ClientRepositoryImpl(
         withContext(Dispatchers.IO) {
             runAppCatching(mapper = { it.toAppError() }) {
                 val response = httpClient.get(ApiEndpoints.Clients.BASE) {
+                    parameter("limit", 2000)
                     if (isAdmin) {
                         parameter("searchMode", "remote")
                     }
@@ -102,6 +103,7 @@ class ClientRepositoryImpl(
             val response = httpClient.get(ApiEndpoints.Clients.BASE) {
                 parameter("search", query)
                 parameter("searchMode", "local")
+                parameter("limit", 2000)
             }.body<ClientsResponse>()
 
             Log.d("CLIENT_REPO", "✅ Found ${response.clients.size} local clients")
@@ -121,6 +123,7 @@ class ClientRepositoryImpl(
             val response = httpClient.get(ApiEndpoints.Clients.BASE) {
                 parameter("search", query)
                 parameter("searchMode", "remote")
+                parameter("limit", 2000)
 
                 if (filterType != null && filterValue != null) {
                     parameter("filterType", filterType)
@@ -147,6 +150,31 @@ class ClientRepositoryImpl(
             }.body<SingleClientResponse>()
 
             Log.d("CLIENT_REPO", "✅ Address updated successfully")
+            response.client.toClientDto().toDomain()
+        }
+    }
+
+    override suspend fun updateClientLocation(
+        clientId: String,
+        latitude: Double,
+        longitude: Double,
+        accuracy: Double?
+    ): AppResult<Client> = withContext(Dispatchers.IO) {
+        runAppCatching(mapper = { it.toAppError() }) {
+            Log.d("CLIENT_REPO", "📍 Tagging GPS location for client: $clientId")
+
+            val request = UpdateLocationRequest(
+                latitude = latitude,
+                longitude = longitude,
+                accuracy = accuracy
+            )
+
+            val response = httpClient.patch("${ApiEndpoints.Clients.BASE}/$clientId/location") {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }.body<SingleClientResponse>()
+
+            Log.d("CLIENT_REPO", "✅ GPS Location tagged successfully")
             response.client.toClientDto().toDomain()
         }
     }
@@ -374,6 +402,7 @@ fun BackendClient.toClientDto(): ClientDto {
         createdAt = this.createdAt ?: "",
         updatedAt = this.updatedAt ?: "",
         hasLocation = (this.latitude != null && this.longitude != null),
+        lastVisitType = this.lastVisitType,
         lastVisitDate = this.lastVisitDate,
         lastVisitNotes = this.lastVisitNotes
     )
@@ -382,6 +411,13 @@ fun BackendClient.toClientDto(): ClientDto {
 @Serializable
 data class UpdateAddressRequest(
     val address: String
+)
+
+@Serializable
+data class UpdateLocationRequest(
+    val latitude: Double,
+    val longitude: Double,
+    val accuracy: Double? = null
 )
 
 @Serializable

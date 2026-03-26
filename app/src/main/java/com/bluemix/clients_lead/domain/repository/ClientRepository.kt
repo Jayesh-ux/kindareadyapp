@@ -75,6 +75,16 @@ interface IClientRepository {
     ): AppResult<Client>
 
     /**
+     * ✅ NEW: Direct coordinate update for Phase 1 (GPS Tagging)
+     */
+    suspend fun updateClientLocation(
+        clientId: String,
+        latitude: Double,
+        longitude: Double,
+        accuracy: Double? = null
+    ): AppResult<Client>
+
+    /**
      * Get current locations of all team members (Admins only)
      */
     suspend fun getTeamLocations(): AppResult<List<AgentLocation>>

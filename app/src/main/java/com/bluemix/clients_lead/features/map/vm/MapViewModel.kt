@@ -48,7 +48,8 @@ data class MapUiState(
     val currentLocationAccuracy: Float? = null,
     val activeJourneyClientId: String? = null,
     val showOnlineAgentsOnly: Boolean = false,
-    val showHighAccuracyOnly: Boolean = false
+    val showHighAccuracyOnly: Boolean = false,
+    val userEmail: String? = null
 )
 class MapViewModel(
     private val getClientsWithLocation: GetClientsWithLocation,
@@ -56,6 +57,7 @@ class MapViewModel(
     private val locationTrackingStateManager: LocationTrackingStateManager,
     private val createQuickVisit: CreateQuickVisit,
     private val updateClientAddress: UpdateClientAddress,
+    private val updateClientLocation: com.bluemix.clients_lead.domain.usecases.UpdateClientLocation,
     private val getTeamLocations: GetTeamLocations,
     private val observeAuthState: ObserveAuthState,
     private val searchRemoteClients: SearchRemoteClients,
@@ -81,8 +83,9 @@ class MapViewModel(
         viewModelScope.launch {
             observeAuthState().collect { user ->
                 val isAdmin = user?.isAdmin ?: false
-                Timber.d("ðŸ”‘ Auth Update: ${user?.email}, isAdmin=$isAdmin, companyId=${user?.companyId}")
-                _uiState.update { it.copy(isAdmin = isAdmin) }
+                val email = user?.email
+                Timber.d("ðŸ”‘ Auth Update: $email, isAdmin=$isAdmin, companyId=${user?.companyId}")
+                _uiState.update { it.copy(isAdmin = isAdmin, userEmail = email) }
                 if (!authResolved) {
                     authResolved = true
                     Timber.d("ðŸš€ Initial Load Triggered (isAdmin=$isAdmin)")
@@ -114,12 +117,13 @@ class MapViewModel(
                 // Initial log to mark the start
                 _uiState.value.currentLocation?.let { loc ->
                     getCurrentUserId()?.let { userId ->
+                        val email = _uiState.value.userEmail ?: "Unknown"
                         insertLocationLog(
                             userId = userId,
                             latitude = loc.latitude,
                             longitude = loc.longitude,
                             markActivity = "CLOCK_IN",
-                            markNotes = "Agent started work session"
+                            markNotes = "Agent ($email) started work session"
                         )
                     }
                 }
@@ -136,12 +140,13 @@ class MapViewModel(
             try {
                 _uiState.value.currentLocation?.let { loc ->
                     getCurrentUserId()?.let { userId ->
+                        val email = _uiState.value.userEmail ?: "Unknown"
                         insertLocationLog(
                             userId = userId,
                             latitude = loc.latitude,
                             longitude = loc.longitude,
                             markActivity = "CLOCK_OUT",
-                            markNotes = "Agent ended work session"
+                            markNotes = "Agent ($email) ended work session"
                         )
                     }
                 }
@@ -398,6 +403,45 @@ class MapViewModel(
     fun clearUpdateError() {
         _uiState.update { it.copy(updateError = null) }
     }
+
+    fun tagLocation(clientId: String) {
+        viewModelScope.launch {
+            val currentLocation = _uiState.value.currentLocation
+            if (currentLocation == null) {
+                _uiState.update { it.copy(error = "Location not available. Please enable location services.") }
+                return@launch
+            }
+            
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            
+            when (val result = updateClientLocation(
+                clientId = clientId,
+                latitude = currentLocation.latitude,
+                longitude = currentLocation.longitude,
+                accuracy = _uiState.value.currentLocationAccuracy?.toDouble()
+            )) {
+                is AppResult.Success -> {
+                    val updatedClient = result.data
+                    val updatedClients = _uiState.value.clients.map { if (it.id == clientId) updatedClient.copy() else it }
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            clients = updatedClients,
+                            filteredClients = filterClients(updatedClients, currentState.searchQuery),
+                            selectedClient = updatedClient,
+                            isLoading = false,
+                            error = "Location successfully tagged!"
+                        )
+                    }
+                }
+                is AppResult.Error -> {
+                    _uiState.update { it.copy(
+                        isLoading = false,
+                        error = "Failed to tag location: ${result.error.message}"
+                    ) }
+                }
+            }
+        }
+    }
     fun updateQuickVisitStatus(clientId: String, visitType: String, notes: String? = null) {
         viewModelScope.launch {
             try {
@@ -484,6 +528,18 @@ class MapViewModel(
     }
     fun logout() {
         viewModelScope.launch {
+            _uiState.value.currentLocation?.let { loc ->
+                getCurrentUserId()?.let { userId ->
+                    val email = _uiState.value.userEmail ?: "Unknown"
+                    insertLocationLog(
+                        userId = userId,
+                        latitude = loc.latitude,
+                        longitude = loc.longitude,
+                        markActivity = "LOGOUT",
+                        markNotes = "Agent ($email) logged out"
+                    )
+                }
+            }
             signOut()
         }
     }

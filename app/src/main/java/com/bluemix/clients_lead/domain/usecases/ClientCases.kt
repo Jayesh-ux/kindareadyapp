@@ -7,14 +7,14 @@ import com.bluemix.clients_lead.domain.repository.IClientRepository
 class GetAllClients(
     private val repository: IClientRepository
 ) {
-    suspend operator fun invoke(userId: String, page: Int = 1, limit: Int = 50): AppResult<List<Client>> =
+    suspend operator fun invoke(userId: String, page: Int = 1, limit: Int = 2000): AppResult<List<Client>> =
         repository.getAllClients(userId, page, limit)
 }
 
 class GetClientsByStatus(
     private val repository: IClientRepository
 ) {
-    suspend operator fun invoke(userId: String, status: String, page: Int = 1, limit: Int = 50): AppResult<List<Client>> =
+    suspend operator fun invoke(userId: String, status: String, page: Int = 1, limit: Int = 2000): AppResult<List<Client>> =
         repository.getClientsByStatus(userId, status, page, limit)
 }
 

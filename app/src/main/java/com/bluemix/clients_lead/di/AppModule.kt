@@ -58,6 +58,7 @@ val appModule = module {
             get(), // LocationTrackingStateManager (from locationModule)
             createQuickVisit = get(),     // from clientModule
             updateClientAddress = get(),   // from clientModule
+            updateClientLocation = get(),  // from clientModule (NEW)
             getTeamLocations = get(),      // from clientModule
             observeAuthState = get(),      // from authModule
             searchRemoteClients = get(),   // from clientModule (NEW)

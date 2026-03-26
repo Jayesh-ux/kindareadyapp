@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.app.NotificationManager
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +42,7 @@ class LocationTrackingStateManager(
                 Timber.tag(TAG).d("Location enabled state changed: $enabled")
 
                 // If location was disabled and service is running, stop it
-                if (!enabled && isServiceRunning(LocationTrackerService::class.java)) {
+                if (!enabled && isServiceRunning()) {
                     Timber.tag(TAG).w("⚠️ Location disabled by user, stopping tracking service")
                     stopTracking()
                 }
@@ -85,7 +86,7 @@ class LocationTrackingStateManager(
             return
         }
 
-        if (isServiceRunning(LocationTrackerService::class.java)) {
+        if (isServiceRunning()) {
             Timber.tag(TAG).w("⚠️ Service already running, skipping start")
             _trackingState.value = true
             return
@@ -108,7 +109,7 @@ class LocationTrackingStateManager(
     suspend fun stopTracking() {
         Timber.tag(TAG).d("Request received to STOP location tracking")
 
-        if (!isServiceRunning(LocationTrackerService::class.java)) {
+        if (!isServiceRunning()) {
             Timber.tag(TAG).w("⚠️ Service not running, skipping stop")
             _trackingState.value = false
             return
@@ -134,7 +135,7 @@ class LocationTrackingStateManager(
     }
 
     fun updateTrackingState() {
-        val running = isServiceRunning(LocationTrackerService::class.java)
+        val running = isServiceRunning()
         Timber.tag(TAG).d("Tracking state refreshed from system. isRunning = $running")
         _trackingState.value = running
     }
@@ -146,17 +147,35 @@ class LocationTrackingStateManager(
     }
 
     @Suppress("DEPRECATION")
-    private fun isServiceRunning(serviceClass: Class<*>): Boolean {
+    private fun isServiceRunning(): Boolean {
         return try {
-            val manager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val activityManager = appContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
                 ?: return false
 
-            val running = manager.getRunningServices(Int.MAX_VALUE).any {
-                it.service.className == serviceClass.name
+            // Strategy 1: Traditional check
+            val isRunning = activityManager.getRunningServices(Integer.MAX_VALUE).any {
+                it.service.className == LocationTrackerService::class.java.name
             }
 
-            Timber.tag(TAG).d("Service running check = $running")
-            running
+            if (isRunning) {
+                Timber.tag(TAG).d("Service running check (Strategy 1) = true")
+                return true
+            }
+
+            // Strategy 2: Notification check (Reliable for foreground services on Android 12+)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                    ?: return false
+                val notifications = notificationManager.activeNotifications
+                val notificationRunning = notifications.any {
+                    it.id == 1 || it.notification.channelId == "location_channel"
+                }
+                Timber.tag(TAG).d("Service running check (Strategy 2) = $notificationRunning")
+                return notificationRunning
+            }
+
+            Timber.tag(TAG).d("Service running check = false")
+            false
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error checking if service is running")
             false
