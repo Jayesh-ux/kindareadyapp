@@ -1,0 +1,551 @@
+package com.bluemix.clients_lead.features.Clients.vm
+
+import android.content.Context
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.bluemix.clients_lead.core.common.utils.AppResult
+import com.bluemix.clients_lead.core.network.ApiClientProvider
+import com.bluemix.clients_lead.core.network.ApiEndpoints
+import com.bluemix.clients_lead.core.network.SessionManager
+import com.bluemix.clients_lead.core.network.TokenStorage
+import com.bluemix.clients_lead.domain.model.Client
+import com.bluemix.clients_lead.domain.usecases.CreateClient
+import com.bluemix.clients_lead.domain.usecases.GetAllClients
+import com.bluemix.clients_lead.domain.usecases.GetCurrentUserId
+import com.bluemix.clients_lead.domain.usecases.SearchRemoteClients
+import com.bluemix.clients_lead.features.location.LocationTrackingStateManager
+import kotlinx.coroutines.flow.update
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.client.request.*
+import io.ktor.http.*
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+enum class ClientFilter {
+    ALL, ACTIVE, INACTIVE, COMPLETED
+}
+
+enum class SearchMode {
+    LOCAL,   // Search within current pincode
+    REMOTE   // Search across all pincodes
+}
+
+data class ClientsUiState(
+    val isLoading: Boolean = false,
+    val clients: List<Client> = emptyList(),
+    val filteredClients: List<Client> = emptyList(),
+    val selectedFilter: ClientFilter = ClientFilter.ALL,
+    val searchQuery: String = "",
+    val searchMode: SearchMode = SearchMode.LOCAL,
+    val remoteResults: List<Client> = emptyList(),
+    val sortByDistance: Boolean = false,
+    val userLocation: Pair<Double, Double>? = null,
+    val isSearching: Boolean = false,
+    // Start as TRUE so the overlay doesn't flash before the service state is read.
+    // The real value is set in init{} before any UI frame is drawn.
+    val isTrackingEnabled: Boolean = true,
+    val isAdmin: Boolean = false,
+    val error: String? = null,
+    val isCreating: Boolean = false,
+    val createSuccess: Boolean = false,
+    val createError: String? = null
+)
+
+class ClientsViewModel(
+    private val getAllClients: GetAllClients,
+    private val searchRemoteClients: SearchRemoteClients,
+    private val tokenStorage: TokenStorage,
+    private val sessionManager: SessionManager, // ✅ Added SessionManager
+    private val getCurrentUserId: GetCurrentUserId,
+    private val locationTrackingStateManager: LocationTrackingStateManager,
+    private val context: Context,
+    private val createClient: CreateClient,
+    private val observeAuthState: com.bluemix.clients_lead.domain.usecases.ObserveAuthState // ✅ NEW
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(ClientsUiState())
+    val uiState: StateFlow<ClientsUiState> = _uiState.asStateFlow()
+
+    private val locationManager = com.bluemix.clients_lead.features.location.LocationManager(context)
+
+    init {
+        // Seed the tracking state SYNCHRONOUSLY from the real system state
+        // so the overlay never shows a false-negative on first composition.
+        val initiallyTracking = locationTrackingStateManager.isCurrentlyTracking()
+            || locationManager.hasLocationPermission() && locationManager.isLocationEnabled()
+        _uiState.value = _uiState.value.copy(isTrackingEnabled = initiallyTracking)
+
+        observeAuth()
+        observeTrackingState()
+        refreshTrackingState()
+        fetchUserLocation()
+        autoStartTracking()
+    }
+
+    private fun observeAuth() {
+        viewModelScope.launch {
+            observeAuthState().collect { user ->
+                val isAdmin = user?.isAdmin ?: false
+                _uiState.update { it.copy(
+                    isAdmin = isAdmin,
+                    // Default to remote for admins
+                    searchMode = if (isAdmin) SearchMode.REMOTE else SearchMode.LOCAL
+                )}
+                
+                if (isAdmin) {
+                    loadClients() // Trigger load immediately for admin
+                }
+            }
+        }
+    }
+
+    private fun autoStartTracking() {
+        viewModelScope.launch {
+            // Start immediately — no artificial delay.
+            // startTracking() is idempotent; calling it when already running is a no-op.
+            if (!locationTrackingStateManager.isCurrentlyTracking()) {
+                Timber.d("🚀 Auto-starting tracking from ClientsViewModel...")
+                locationTrackingStateManager.startTracking()
+            }
+        }
+    }
+
+    private fun fetchUserLocation() {
+        viewModelScope.launch {
+            try {
+                if (locationManager.hasLocationPermission() && locationManager.isLocationEnabled()) {
+                    val location = locationManager.getLastKnownLocation()
+                    location?.let {
+                        _uiState.value = _uiState.value.copy(
+                            userLocation = Pair(it.latitude, it.longitude)
+                        )
+                        Timber.d("User location: ${it.latitude}, ${it.longitude}")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to get user location")
+            }
+        }
+    }
+
+    private fun observeTrackingState() {
+        viewModelScope.launch {
+            locationTrackingStateManager.trackingState.collect { isTracking ->
+                Timber.d("ClientsViewModel: tracking state changed = $isTracking")
+
+                // The service may not be running yet even though GPS is on and permissions
+                // are granted (e.g., service is still spinning up). In that case we keep
+                // isTrackingEnabled = true so the overlay doesn't flash incorrectly.
+                val gpsPlusPermission = locationManager.hasLocationPermission()
+                    && locationManager.isLocationEnabled()
+                val effectiveTracking = isTracking || gpsPlusPermission || _uiState.value.isAdmin
+
+                _uiState.value = _uiState.value.copy(
+                    isTrackingEnabled = effectiveTracking
+                )
+
+                if (!effectiveTracking) {
+                    Timber.d("Tracking truly disabled (no service, no GPS/permission, not admin). Clearing clients.")
+                    _uiState.value = _uiState.value.copy(
+                        clients = emptyList(),
+                        filteredClients = emptyList(),
+                        remoteResults = emptyList(),
+                        isLoading = false,
+                        error = null
+                    )
+                } else {
+                    loadClients()
+                }
+            }
+        }
+    }
+
+    fun resetCreateState() {
+        _uiState.update { currentState ->
+            currentState.copy(
+                createSuccess = false,
+                createError = null
+            )
+        }
+    }
+
+    fun createClientAction(
+        name: String,
+        phone: String?,
+        email: String?,
+        address: String?,
+        pincode: String?,
+        notes: String?,
+        latitude: Double? = null,
+        longitude: Double? = null
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isCreating = true, createError = null, createSuccess = false) }
+
+            try {
+                when (val result = createClient(name, phone, email, address, pincode, notes, latitude, longitude)) {
+                    is AppResult.Success -> {
+                        Timber.d("✅ Client created successfully: ${result.data.name}")
+
+                        _uiState.update {
+                            it.copy(
+                                isCreating = false,
+                                createSuccess = true
+                            )
+                        }
+
+                        loadClients()
+                    }
+
+                    is AppResult.Error -> {
+                        Timber.e("❌ Create client failed: ${result.error.message}")
+
+                        _uiState.update {
+                            it.copy(
+                                isCreating = false,
+                                createError = result.error.message ?: "Failed to create client"
+                            )
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Create client error: ${e.message}")
+                _uiState.update {
+                    it.copy(
+                        isCreating = false,
+                        createError = e.message ?: "Failed to create client"
+                    )
+                }
+            }
+        }
+    }
+
+    fun refreshTrackingState() {
+        Timber.d("ClientsViewModel: refreshing tracking state from system")
+        locationTrackingStateManager.updateTrackingState()
+    }
+
+    fun enableTracking() {
+        viewModelScope.launch {
+            Timber.d("ClientsViewModel: enableTracking() requested from UI")
+            locationTrackingStateManager.startTracking()
+        }
+    }
+
+    fun loadClients() {
+        viewModelScope.launch {
+            val isTracking = locationTrackingStateManager.isCurrentlyTracking()
+            val isAdmin = _uiState.value.isAdmin
+            // Also allow loading when GPS is on + permissions granted even if the
+            // foreground service hasn't fully started yet (avoids the race condition).
+            val gpsPlusPermission = locationManager.hasLocationPermission()
+                && locationManager.isLocationEnabled()
+
+            if (!isTracking && !isAdmin && !gpsPlusPermission) {
+                Timber.w("Denied client loading: no tracking, no admin, and no GPS+permission.")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    clients = emptyList(),
+                    filteredClients = emptyList(),
+                    error = "Please enable location services to view clients."
+                )
+                return@launch
+            }
+
+            Timber.d("Loading clients...")
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            val userId = getCurrentUserId()
+            if (userId == null) {
+                Timber.e("User not authenticated")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "User not authenticated"
+                )
+                return@launch
+            }
+
+            Timber.d("Loading clients for user: $userId")
+
+            when (val result = getAllClients(userId)) {
+                is AppResult.Success -> {
+                    val clients = result.data
+                    Timber.d("Successfully loaded ${clients.size} clients")
+
+                    val sorted = if (_uiState.value.sortByDistance) {
+                        sortClientsByDistance(clients)
+                    } else {
+                        clients
+                    }
+
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        clients = sorted,
+                        filteredClients = filterClients(sorted, ClientFilter.ALL, "")
+                    )
+                }
+
+                is AppResult.Error -> {
+                    Timber.e(result.error.message, "Failed to load clients: ${result.error.message}")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = result.error.message ?: "Failed to load clients"
+                    )
+                }
+            }
+        }
+    }
+
+    fun setFilter(filter: ClientFilter) {
+        val filtered = filterClients(
+            _uiState.value.clients,
+            filter,
+            _uiState.value.searchQuery
+        )
+        _uiState.value = _uiState.value.copy(
+            selectedFilter = filter,
+            filteredClients = filtered
+        )
+    }
+
+    fun setSearchMode(mode: SearchMode) {
+        Timber.d("Switching search mode to: $mode")
+        _uiState.value = _uiState.value.copy(
+            searchMode = mode,
+            searchQuery = "",
+            remoteResults = emptyList(),
+            sortByDistance = false
+        )
+    }
+
+    fun toggleDistanceSort() {
+        val newValue = !_uiState.value.sortByDistance
+        Timber.d("Toggle distance sort: $newValue")
+
+        _uiState.value = _uiState.value.copy(
+            sortByDistance = newValue
+        )
+
+        if (_uiState.value.searchMode == SearchMode.LOCAL) {
+            val sorted = if (newValue) {
+                sortClientsByDistance(_uiState.value.clients)
+            } else {
+                _uiState.value.clients
+            }
+
+            val filtered = filterClients(
+                sorted,
+                _uiState.value.selectedFilter,
+                _uiState.value.searchQuery
+            )
+
+            _uiState.value = _uiState.value.copy(
+                filteredClients = filtered
+            )
+        }
+    }
+
+    fun searchClients(query: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                searchQuery = query,
+                isSearching = query.isNotBlank() && _uiState.value.searchMode == SearchMode.REMOTE
+            )
+
+            when (_uiState.value.searchMode) {
+                SearchMode.LOCAL -> {
+                    val filtered = filterClients(
+                        _uiState.value.clients,
+                        _uiState.value.selectedFilter,
+                        query
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        filteredClients = filtered,
+                        isSearching = false
+                    )
+                }
+
+                SearchMode.REMOTE -> {
+                    if (query.isBlank()) {
+                        _uiState.value = _uiState.value.copy(
+                            remoteResults = emptyList(),
+                            isSearching = false
+                        )
+                        return@launch
+                    }
+
+                    val userId = getCurrentUserId()
+                    if (userId == null) {
+                        _uiState.value = _uiState.value.copy(
+                            isSearching = false,
+                            error = "User not authenticated"
+                        )
+                        return@launch
+                    }
+
+                    Timber.d("Performing remote search: '$query'")
+
+                    when (val result = searchRemoteClients(userId, query, null, null)) {
+                        is AppResult.Success -> {
+                            Timber.d("Remote search found ${result.data.size} clients")
+
+                            val sorted = sortClientsByDistance(result.data)
+
+                            _uiState.value = _uiState.value.copy(
+                                remoteResults = sorted,
+                                isSearching = false
+                            )
+                        }
+
+                        is AppResult.Error -> {
+                            Timber.e("Remote search failed: ${result.error.message}")
+                            _uiState.value = _uiState.value.copy(
+                                isSearching = false,
+                                error = "Search failed: ${result.error.message}"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun sortClientsByDistance(clients: List<Client>): List<Client> {
+        val userLoc = _uiState.value.userLocation
+        if (userLoc == null) {
+            Timber.w("Cannot sort by distance: user location not available")
+            return clients
+        }
+
+        return clients.sortedBy { client ->
+            client.distanceFrom(userLoc.first, userLoc.second) ?: Double.MAX_VALUE
+        }
+    }
+
+    private fun filterClients(
+        clients: List<Client>,
+        filter: ClientFilter,
+        query: String
+    ): List<Client> {
+        var filtered = when (filter) {
+            ClientFilter.ALL -> clients
+            ClientFilter.ACTIVE -> clients.filter { it.status == "active" }
+            ClientFilter.INACTIVE -> clients.filter { it.status == "inactive" }
+            ClientFilter.COMPLETED -> clients.filter { it.status == "completed" }
+        }
+
+        if (query.isNotBlank()) {
+            filtered = filtered.filter {
+                it.name.contains(query, ignoreCase = true) ||
+                        it.email?.contains(query, ignoreCase = true) == true ||
+                        it.phone?.contains(query, ignoreCase = true) == true
+            }
+        }
+
+        return filtered
+    }
+
+    fun refresh() {
+        loadClients()
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    fun uploadExcelFile(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+                Timber.d("📂 Starting Excel upload...")
+
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream == null) {
+                    Timber.e("❌ Failed to open file stream")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Failed to open file"
+                    )
+                    return@launch
+                }
+
+                val fileBytes = inputStream.readBytes()
+                inputStream.close()
+                Timber.d("📦 File size: ${fileBytes.size} bytes")
+
+                val token = tokenStorage.getToken()
+                if (token == null) {
+                    Timber.e("❌ No auth token found")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Not authenticated. Please log in again."
+                    )
+                    return@launch
+                }
+
+                // ✅ Pass sessionManager to ApiClientProvider
+                val client = ApiClientProvider.create(
+                    baseUrl = ApiEndpoints.BASE_URL,
+                    tokenStorage = tokenStorage,
+                    sessionManager = sessionManager // ✅ Fixed!
+                )
+
+                val response: HttpResponse = client.submitFormWithBinaryData(
+                    url = "${ApiEndpoints.BASE_URL}${ApiEndpoints.Clients.UPLOAD_EXCEL}",
+                    formData = formData {
+                        append(
+                            "file",
+                            fileBytes,
+                            Headers.build {
+                                append(HttpHeaders.ContentDisposition, "filename=\"clients.xlsx\"")
+                                append(HttpHeaders.ContentType, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            }
+                        )
+                    }
+                )
+
+                val responseBody = response.bodyAsText()
+                Timber.d("✅ Upload success! Status: ${response.status}")
+                Timber.d("📥 Response: $responseBody")
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "File uploaded successfully!"
+                )
+
+                loadClients()
+
+            } catch (e: ClientRequestException) {
+                Timber.e(e, "❌ Upload failed with status: ${e.response.status}")
+                val errorBody = try {
+                    e.response.bodyAsText()
+                } catch (ex: Exception) {
+                    "Unable to read error response"
+                }
+                Timber.e("Error body: $errorBody")
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Upload failed: ${e.response.status}"
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Upload failed: ${e.message}")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Upload failed: ${e.message}"
+                )
+            }
+        }
+    }
+}
