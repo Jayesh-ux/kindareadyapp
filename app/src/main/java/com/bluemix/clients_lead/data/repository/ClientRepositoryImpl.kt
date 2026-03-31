@@ -22,6 +22,7 @@ import android.util.Log
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.ContentType
+import com.bluemix.clients_lead.domain.model.DailySummary
 
 class ClientRepositoryImpl(
     private val httpClient: HttpClient
@@ -225,6 +226,33 @@ class ClientRepositoryImpl(
             }
         }
 
+    override suspend fun getLiveAgents(): AppResult<List<com.bluemix.clients_lead.domain.repository.AgentLocation>> =
+        withContext(Dispatchers.IO) {
+            runAppCatching(mapper = { it.toAppError() }) {
+                Log.d("CLIENT_REPO", "📡 Fetching LIVE agents...")
+                val response = httpClient.get(ApiEndpoints.Admin.LIVE_AGENTS).body<TeamLocationsResponse>()
+                
+                response.agents.map { it.toDomain() }
+            }
+        }
+
+    override suspend fun getDailySummary(): AppResult<DailySummary> =
+        withContext(Dispatchers.IO) {
+            runAppCatching(mapper = { it.toAppError() }) {
+                Log.d("CLIENT_REPO", "📡 Fetching daily summary...")
+                val response = httpClient.get(ApiEndpoints.Admin.DAILY_SUMMARY).body<DailySummaryDto>()
+                
+                DailySummary(
+                    activeAgents = response.activeAgents,
+                    idleAgents = response.idleAgents,
+                    totalMeetings = response.totalMeetings,
+                    verifiedMeetings = response.verifiedMeetings,
+                    totalDistance = response.totalDistance,
+                    alertsCount = response.alertsCount
+                )
+            }
+        }
+
     override suspend fun updateUserStatus(userId: String, isActive: Boolean): AppResult<Unit> =
         withContext(Dispatchers.IO) {
             runAppCatching(mapper = { it.toAppError() }) {
@@ -354,6 +382,16 @@ data class DashboardStatsDto(
 )
 
 @Serializable
+data class DailySummaryDto(
+    val activeAgents: Int,
+    val idleAgents: Int,
+    val totalMeetings: Int,
+    val verifiedMeetings: Int,
+    val totalDistance: Double,
+    val alertsCount: Int = 0
+)
+
+@Serializable
 data class ClientsResponse(
     val clients: List<BackendClient>,
     val pagination: PaginationData? = null,
@@ -445,6 +483,9 @@ data class AgentLocationDto(
     val timestamp: String? = null, 
     val activity: String? = null, 
     val battery: Int? = null,
+    val battery_level: Int? = null, // Sync from backend camelCase issue? Backend sends battery_level
+    val smart_status: String? = null,
+    val visit_count: Int? = null,
     val isActive: Boolean? = null,
     val markNotes: String? = null // S7: Used to parse structured context (client name, transport mode)
 )
@@ -460,7 +501,9 @@ fun AgentLocationDto.toDomain(): com.bluemix.clients_lead.domain.repository.Agen
         accuracy = accuracy,
         timestamp = timestamp,
         activity = activity,
-        battery = battery,
+        battery = battery ?: battery_level, // Use whichever is available
+        smartStatus = smart_status,
+        visitCount = visit_count ?: 0,
         isActive = isActive ?: true,
         currentClientName = clientName,
         transportMode = transportMode,

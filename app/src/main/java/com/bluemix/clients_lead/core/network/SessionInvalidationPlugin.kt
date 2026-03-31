@@ -17,8 +17,8 @@ import timber.log.Timber
 class SessionInvalidationPlugin(
     private val onSessionInvalidated: suspend () -> Unit
 ) {
-    // ✅ Flag to prevent multiple logout triggers
-    private var hasTriggeredLogout = false
+    // ✅ FIXED: @Volatile ensures cross-thread visibility on multi-core devices
+    @Volatile private var hasTriggeredLogout = false
 
     class Config {
         var onSessionInvalidated: (suspend () -> Unit)? = null

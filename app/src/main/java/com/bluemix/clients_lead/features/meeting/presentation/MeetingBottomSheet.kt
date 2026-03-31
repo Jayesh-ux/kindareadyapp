@@ -32,12 +32,17 @@ import ui.AppTheme
 import ui.components.Icon
 import ui.components.IconButton
 import ui.components.Text
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.bluemix.clients_lead.core.design.ui.components.textfield.OutlinedTextField
 import com.bluemix.clients_lead.features.meeting.utils.ProximityDetector
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.android.gms.maps.model.LatLng
 import java.time.Duration
 import java.time.Instant
 
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun MeetingBottomSheet(
     client: Client,
@@ -427,7 +432,7 @@ fun MeetingBottomSheet(
 
                             TextButton(
                                 onClick = {
-                                    if (cameraPermission.status.isGranted) {
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                                         // ✅ Mandatory Camera Capture
                                         val photoFile = java.io.File(
                                             context.cacheDir,

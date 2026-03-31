@@ -11,12 +11,12 @@ plugins {
 
 android {
     namespace = "com.bluemix.clients_lead"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.bluemix.clients_lead"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
@@ -26,18 +26,14 @@ android {
         val secretsFile = rootProject.file("local.properties")
         val secrets = Properties().apply { if (secretsFile.exists()) load(secretsFile.inputStream()) }
 
-        val supabaseUrl = secrets.getProperty("SUPABASE_URL")
-            ?: System.getenv("SUPABASE_URL")
-            ?: ""
-        val supabaseKey = secrets.getProperty("SUPABASE_ANON_KEY")
-            ?: System.getenv("SUPABASE_ANON_KEY")
-            ?: ""
         val apiBaseUrl = secrets.getProperty("API_BASE_URL")
             ?: "https://backup-server-q2dc.onrender.com"
 
-        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseKey\"")
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+
+        // Maps API key from local.properties → AndroidManifest placeholder
+        val mapsApiKey = secrets.getProperty("MAPS_API_KEY") ?: ""
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
     buildTypes {
@@ -56,8 +52,7 @@ android {
             buildConfigField(
                 "boolean",
                 "RELEASE_SECRETS_OK",
-                "(\"${System.getenv("SUPABASE_URL") ?: ""}\".length > 0 && " +
-                        "\"${System.getenv("SUPABASE_ANON_KEY") ?: ""}\".length > 0).toString()"
+                "true.toString()"
             )
         }
     }
@@ -97,21 +92,15 @@ android {
 
 dependencies {
 
-    implementation("androidx.compose.material3:material3:1.1.2")
-
-    // Already have these from your project
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.animation:animation")
-
     // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
 
-    // Compose BOM + core set
+    // Compose BOM + core set (includes material3, ui, ui-graphics, icons, ripple)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.bundles.compose.core)
+    implementation("androidx.compose.animation:animation")
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -120,29 +109,29 @@ dependencies {
     // Navigation
     implementation(libs.androidx.navigation.compose)
 
-    // Google Maps & Places
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.android.gms:play-services-location:21.1.0")
+    // Google Maps & Places (single source via catalog)
+    implementation(libs.play.services.maps)
+    implementation(libs.play.services.location)
+    implementation(libs.maps.compose)
     implementation("com.google.maps.android:places-ktx:3.1.0")
     implementation("com.google.android.libraries.places:places:3.3.0")
 
-    // Material Icons Extended (if not included)
-    implementation("androidx.compose.material:material-icons-extended:1.5.4")
-
-    // ❌ REMOVE THIS - You have it duplicated below
-    // implementation("io.coil-kt:coil-compose:2.4.0")
-
-    // ✅ KEEP THIS ONE (latest version)
+    // Image loading
     implementation("io.coil-kt:coil-compose:2.5.0")
-
-    // Ktor 3.x stack for Supabase
-    implementation(libs.bundles.supabase.stack)
 
     // KotlinX
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.play.services)
+
+    // Ktor (networking stack used by ApiClientProvider, repositories, etc.)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.client.logging)
+    implementation(libs.ktor.client.auth)
 
     // Data & Work & Room (KSP)
     implementation(libs.androidx.datastore)
@@ -152,11 +141,6 @@ dependencies {
     implementation(libs.room.paging)
     ksp(libs.room.compiler)
 
-    // Google Services (pull via catalog)
-    implementation(libs.play.services.location)
-    implementation(libs.play.services.maps)
-    implementation(libs.maps.compose)
-
     // Accompanist
     implementation(libs.accompanist.permissions)
 
@@ -164,6 +148,7 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
 
+    // Security
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Misc

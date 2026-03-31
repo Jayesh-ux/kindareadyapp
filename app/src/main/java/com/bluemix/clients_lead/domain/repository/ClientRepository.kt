@@ -2,6 +2,7 @@ package com.bluemix.clients_lead.domain.repository
 
 import com.bluemix.clients_lead.core.common.utils.AppResult
 import com.bluemix.clients_lead.domain.model.Client
+import com.bluemix.clients_lead.domain.model.DailySummary
 
 /**
  * Repository interface for client data operations.
@@ -129,6 +130,16 @@ interface IClientRepository {
     suspend fun getDashboardStats(): AppResult<com.bluemix.clients_lead.domain.model.DashboardStats>
 
     /**
+     * ✅ NEW: Get real-time status of all agents (Smart Status, Battery, Visits)
+     */
+    suspend fun getLiveAgents(): AppResult<List<AgentLocation>>
+
+    /**
+     * ✅ NEW: Get daily performance summary for the company
+     */
+    suspend fun getDailySummary(): AppResult<DailySummary>
+
+    /**
      * ✅ NEW: Trigger background geocoding for all clients with missing coordinates
      */
     suspend fun retryGeocoding(): AppResult<Unit>
@@ -145,6 +156,8 @@ data class AgentLocation(
     val timestamp: String?,
     val activity: String?,
     val battery: Int?,
+    val smartStatus: String? = null,
+    val visitCount: Int = 0,
     val isActive: Boolean = true,
     // S7: Enriched fields — derived from markNotes / activity strings
     val currentClientName: String? = null,

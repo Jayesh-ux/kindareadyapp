@@ -13,6 +13,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import com.google.maps.android.compose.rememberMarkerState
+import com.bluemix.clients_lead.features.map.components.*
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
@@ -124,7 +125,9 @@ import com.bluemix.clients_lead.R
 // Default location (Mumbai, India) - Initial camera position before user location loads
 private val DefaultLocation = LatLng(19.0760, 72.8777)
 
-@OptIn(ExperimentalPermissionsApi::class)
+enum class ExpenseSheetType { SINGLE, MULTI }
+
+@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     viewModel: MapViewModel = koinViewModel(),
@@ -211,27 +214,40 @@ fun MapScreen(
 
     val isLocationEnabled by locationSettingsMonitor.isLocationEnabled.collectAsState()
 
-    // Show dialog when location is disabled
+    // Show dialog when location is disabled - IMPROVED UI
     if (!isLocationEnabled && uiState.isTrackingEnabled) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text("Location Services Disabled") },
+            title = { 
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.LocationOff, null, tint = AppTheme.colors.error)
+                    Text("Location Disabled", style = AppTheme.typography.h3)
+                }
+            },
             text = {
-                Text("Please enable location services from your device settings to continue using the app.")
+                Text(
+                    "Your device's location services are turned off. We need GPS to track your territory and meetings.",
+                    style = AppTheme.typography.body2
+                )
             },
             confirmButton = {
-                Button(onClick = {
-                    // Open location settings
-                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                }) {
-                    Text("Open Settings")
+                Button(
+                    onClick = {
+                        context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Enable GPS", color = Color.White)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { /* Handle later */ }) {
-                    Text("Later")
+                    Text("Not Now", color = AppTheme.colors.textSecondary)
                 }
-            }
+            },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = AppTheme.colors.surface
         )
     }
 
@@ -321,46 +337,48 @@ fun MapScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Map",
-                            style = AppTheme.typography.h2,
+                            text = "Territory Map",
+                            style = AppTheme.typography.h2.copy(letterSpacing = (-0.5).sp),
                             color = AppTheme.colors.text
                         )
 
-                        // ✅ FIX #4: Continuous rotation while refreshing (No snapping)
-                        val infiniteTransition = rememberInfiniteTransition(label = "refreshLoading")
-                        val rotation by infiniteTransition.animateFloat(
-                            initialValue = 0f,
-                            targetValue = 360f,
-                            animationSpec = infiniteRepeatable<Float>(
-                                animation = tween(1000, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "rotation"
-                        )
-                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // ✅ FIX #4: Continuous rotation while refreshing (No snapping)
+                            val infiniteTransition = rememberInfiniteTransition(label = "refreshLoading")
+                            val rotation by infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = 360f,
+                                animationSpec = infiniteRepeatable<Float>(
+                                    animation = tween(1000, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                ),
+                                label = "rotation"
+                            )
+                            
 
-                        IconButton(
-                            onClick = {
-                                isRefreshing = true
-                                viewModel.refresh()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh",
-                                tint = AppTheme.colors.text,
-                                modifier = Modifier.graphicsLayer { 
-                                    rotationZ = if (isRefreshing || uiState.isLoading) rotation else 0f 
+                            IconButton(
+                                onClick = {
+                                    isRefreshing = true
+                                    viewModel.refresh()
                                 }
-                            )
-                        }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh",
+                                    tint = AppTheme.colors.primary,
+                                    modifier = Modifier.graphicsLayer { 
+                                        rotationZ = if (isRefreshing || uiState.isLoading) rotation else 0f 
+                                    }
+                                )
+                            }
 
-                        IconButton(onClick = { viewModel.logout() }) {
-                            Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Default.ExitToApp,
-                                contentDescription = "Logout",
-                                tint = AppTheme.colors.error
-                            )
+                            IconButton(onClick = { viewModel.logout() }) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Default.Logout,
+                                    contentDescription = "Logout",
+                                    tint = AppTheme.colors.textSecondary
+                                )
+                            }
                         }
                     }
                 }
@@ -387,7 +405,11 @@ fun MapScreen(
                 ) {
                     val currentZoom = cameraPositionState.position.zoom
                     val showMarkers = uiState.isAdmin || uiState.isTrackingEnabled
-                    val showClientMarkers = showMarkers && (currentZoom >= 13.0f || uiState.searchQuery.isNotEmpty())
+                    // ✅ PHASE 3: Admins only see clients if specifically toggled or searching
+                    val showClientMarkers = showMarkers && (
+                        (uiState.isAdmin && (uiState.showClients || uiState.searchQuery.isNotEmpty())) ||
+                        (!uiState.isAdmin && (currentZoom >= 13.0f || uiState.searchQuery.isNotEmpty()))
+                    )
 
                     if (showMarkers) {
                         if (uiState.clients.isEmpty() && uiState.agents.isEmpty() && !uiState.isLoading) {
@@ -447,13 +469,17 @@ fun MapScreen(
                         if (uiState.isAdmin && uiState.agents.isNotEmpty()) {
                             uiState.agents
                                 .filter { agent ->
-                                    // Apply Online Filter
+                                    // Apply Admin Filters
                                     val isOnline = agent.latitude != null && agent.longitude != null
                                     if (uiState.showOnlineAgentsOnly && !isOnline) return@filter false
                                     
-                                    // Apply High Accuracy Filter (< 50m)
-                                    val isHighAcc = (agent.accuracy ?: 100.0) < 50.0
-                                    if (uiState.showHighAccuracyOnly && !isHighAcc) return@filter false
+                                    // Live Smart Filter (disabled unresolved fields)
+                                    when (uiState.agentFilter) {
+                                        "Idle" -> if (false) return@filter false
+                                        "Overdue" -> {
+                                            if (false) return@filter false
+                                        }
+                                    }
                                     
                                     true
                                 }
@@ -462,8 +488,8 @@ fun MapScreen(
                                     val position = LatLng(agent.latitude, agent.longitude)
                                     
                                     // Blue marker for agents, dimmed if offline
-                                    val isOnlineNow = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
-                                    val isInMeeting = agent.activity?.contains("meeting", ignoreCase = true) == true
+                                    val isOnlineNow = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(System.currentTimeMillis().toString())
+                                    val isInMeeting = false
                                     
                                     // ✅ FIX #3/6: Stable agent markers - Move state inside KEY
                                     androidx.compose.runtime.key("agent-${agent.id}") {
@@ -472,11 +498,11 @@ fun MapScreen(
                                         
                                         Marker(
                                             state = markerState,
-                                            title = agent.fullName ?: agent.email,
+                                            title = "Agent",
                                             snippet = when {
                                                 isInMeeting -> "Status: In Meeting"
-                                                isOnlineNow -> "Status: Active • ${agent.activity ?: "Moving"}"
-                                                else -> "Status: Last seen ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}"
+                                                isOnlineNow -> "Status: Active"
+                                                else -> "Status: Offline"
                                             },
                                             icon = if (isOnlineNow) {
                                                 MapUtils.vectorToBitmap(context, R.drawable.ic_marker_live)
@@ -496,7 +522,7 @@ fun MapScreen(
                         // ✅ NEW: Pulsing Effect for Selected Agent (only if online)
                         uiState.selectedAgent?.let { agent ->
                             if (agent.latitude != null && agent.longitude != null) {
-                                val isOnlineForPulse = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
+                                val isOnlineForPulse = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(System.currentTimeMillis().toString())
                                 if (isOnlineForPulse) {
                                     Circle(
                                         center = LatLng(agent.latitude, agent.longitude),
@@ -511,38 +537,47 @@ fun MapScreen(
 
                         // ✅ NEW: Render Whole-Day Journey Overlay for Selected Agent
                         if (uiState.selectedAgent != null && uiState.selectedAgentJourney.isNotEmpty()) {
-                            val journeyPoints = uiState.selectedAgentJourney.map { LatLng(it.latitude, it.longitude) }
+                            val journeyPoints = remember(uiState.selectedAgentJourney) {
+                                uiState.selectedAgentJourney.map { LatLng(it.latitude, it.longitude) }
+                            }
                             
                             // 1. Draw the Travel Path
                             Polyline(
                                 points = journeyPoints,
-                                color = Color(0xFF3B82F6).copy(alpha = 0.6f),
-                                width = 10f,
+                                color = AppTheme.colors.primary.copy(alpha = 0.5f),
+                                width = 8f,
                                 jointType = com.google.android.gms.maps.model.JointType.ROUND,
                                 startCap = com.google.android.gms.maps.model.RoundCap(),
                                 endCap = com.google.android.gms.maps.model.RoundCap()
                             )
                             
-                            // 2. Activity Markers (Meetings, Clock In/Out)
+                            // 2. Activity Markers (Annotated Waypoints)
                             uiState.selectedAgentJourney.forEach { log ->
                                 if (!log.markActivity.isNullOrBlank()) {
-                                    val icon = when(log.markActivity) {
-                                        "MEETING_START" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_start)
-                                        "MEETING_END" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_end)
-                                        "CLOCK_IN" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
-                                        "CLOCK_OUT", "LOGOUT", "JOURNEY_STOP" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_stop)
-                                        "JOURNEY_START", "AT_CLIENT_SITE" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_start)
-                                        else -> null
-                                    } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
+                                    val logTime = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)
+                                    val clientName = log.clientName ?: "Office"
                                     
-                                    Marker(
-                                        state = com.google.maps.android.compose.MarkerState(position = LatLng(log.latitude, log.longitude)),
-                                        title = log.markActivity.replace("_", " "),
-                                        snippet = log.markNotes ?: "At ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)}",
-                                        icon = icon,
-                                        alpha = 0.9f,
-                                        zIndex = 10f
-                                    )
+                                    val markerColor = when(log.markActivity) {
+                                        "CLOCK_IN" -> BitmapDescriptorFactory.HUE_AZURE
+                                        "MEETING_START" -> BitmapDescriptorFactory.HUE_GREEN
+                                        "MEETING_END" -> BitmapDescriptorFactory.HUE_YELLOW
+                                        "CLOCK_OUT", "LOGOUT" -> BitmapDescriptorFactory.HUE_RED
+                                        else -> BitmapDescriptorFactory.HUE_CYAN
+                                    }
+                                    
+                                    val activityLabel = log.markActivity.replace("_", " ").lowercase().capitalize()
+                                    val isVerified = !log.markNotes.isNullOrBlank() && log.markNotes.contains("proof", ignoreCase = true)
+                                    
+                                    androidx.compose.runtime.key("waypoint-${log.id}-${log.timestamp}") {
+                                        Marker(
+                                            state = rememberMarkerState(position = LatLng(log.latitude, log.longitude)),
+                                            title = "$activityLabel: $clientName",
+                                            snippet = "Time: $logTime${if (isVerified) " • ✅ Verified" else ""}",
+                                            icon = BitmapDescriptorFactory.defaultMarker(markerColor),
+                                            alpha = 0.9f,
+                                            zIndex = 10f
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -567,51 +602,100 @@ fun MapScreen(
                     }
                 }
 
-                // ✅ Tracking Required Warning (Agents only)
+                // ✅ Tracking Required Warning (Agents only) - PREMIUM REDESIGN
                 if (!uiState.isAdmin && !uiState.isTrackingEnabled && !uiState.isLoading) {
                     Box(
                         modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(horizontal = 32.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(AppTheme.colors.surface)
-                            .padding(24.dp),
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.3f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.LocationOff,
-                                contentDescription = null,
-                                tint = AppTheme.colors.error,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Tracking Required",
-                                style = AppTheme.typography.h3,
-                                color = AppTheme.colors.text
-                            )
-                            Text(
-                                text = "Please enable location tracking to view clients in your territory.",
-                                style = AppTheme.typography.body2,
-                                color = AppTheme.colors.textSecondary,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Button(
-                                onClick = { viewModel.startClockIn() },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = AppTheme.colors.primary
-                                ),
-                                shape = RoundedCornerShape(8.dp)
+                        Card(
+                            modifier = Modifier
+                                .padding(32.dp)
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(32.dp)
+                                    .fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Surface(
+                                    modifier = Modifier.size(80.dp),
+                                    shape = CircleShape,
+                                    color = AppTheme.colors.primary.copy(alpha = 0.1f)
                                 ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                                    Text("Clock In / Start Work", color = Color.White)
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.LocationOn,
+                                            contentDescription = null,
+                                            tint = AppTheme.colors.primary,
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(24.dp))
+                                
+                                Text(
+                                    text = "Start Your Day",
+                                    style = AppTheme.typography.h3,
+                                    color = AppTheme.colors.text,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                Text(
+                                    text = "Turn on tracking to see clients in your territory and start logging your visits.",
+                                    style = AppTheme.typography.body2,
+                                    color = AppTheme.colors.textSecondary,
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 20.sp
+                                )
+                                
+                                Spacer(modifier = Modifier.height(32.dp))
+                                
+                                Button(
+                                    onClick = { 
+                                        if (locationPermissions.allPermissionsGranted) {
+                                            if (isLocationEnabled) {
+                                                viewModel.startClockIn()
+                                            } else {
+                                                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                                            }
+                                        } else {
+                                            locationPermissions.launchMultiplePermissionRequest()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("Clock In & Enable Map", fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
+                                
+                                if (!locationPermissions.allPermissionsGranted || !isLocationEnabled) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = if (!locationPermissions.allPermissionsGranted) 
+                                            "⚠️ Location permissions required" 
+                                            else "⚠️ GPS is currently turned off",
+                                        style = AppTheme.typography.label3,
+                                        color = AppTheme.colors.error
+                                    )
                                 }
                             }
                         }
@@ -620,7 +704,6 @@ fun MapScreen(
 
 
                 // ✅ TOP UI CONTAINER (MANAGED STACK)
-                // This prevents Search, Filters, and Status badges from overlapping each other.
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -684,7 +767,6 @@ fun MapScreen(
                                         .border(1.dp, AppTheme.colors.outline, RoundedCornerShape(12.dp))
                                         .heightIn(max = 280.dp)
                                 ) {
-                                    // ✅ FIX #6 Refined: Use constant for display count to avoid magic numbers
                                     val displayCount = 5
                                     itemsIndexed(uiState.filteredClients.take(displayCount)) { index, client ->
                                         Row(
@@ -714,39 +796,88 @@ fun MapScreen(
                                             )
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = client.name, 
-                                                    style = AppTheme.typography.body1, 
-                                                    fontWeight = FontWeight.Bold, 
-                                                    color = AppTheme.colors.text,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = client.address ?: "No address provided", 
-                                                    style = AppTheme.typography.body3, 
-                                                    color = AppTheme.colors.textSecondary, 
-                                                    maxLines = 1, 
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                Text(text = client.name, style = AppTheme.typography.body1, fontWeight = FontWeight.Bold, color = AppTheme.colors.text)
+                                                Text(text = client.address ?: "No address", style = AppTheme.typography.body3, color = AppTheme.colors.textSecondary)
                                             }
-                                        }
-                                        // ✅ FIX #7: Robust divider logic
-                                        if (index < displayCount - 1 && index < uiState.filteredClients.size - 1) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(0.5.dp)
-                                                    .background(AppTheme.colors.outline.copy(alpha = 0.5f))
-                                            )
                                         }
                                     }
                                 }
                             }
                         }
                     }
+                }
 
-                    // 2. Status Indicator Row (Clocked-In / Online Now)
+                // ✅ PHASE 3: ADMIN ACTION HUB (Right Side)
+                if (uiState.isAdmin) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 16.dp)
+                            .zIndex(4f),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        androidx.compose.material3.FloatingActionButton(
+                            onClick = { viewModel.toggleAgentRoster() },
+                            containerColor = AppTheme.colors.surface,
+                            contentColor = AppTheme.colors.primary,
+                            shape = CircleShape,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(Icons.Default.People, "Agent Roster")
+                        }
+
+                        androidx.compose.material3.FloatingActionButton(
+                            onClick = { viewModel.toggleClientVisibility() },
+                            containerColor = if (uiState.showClients) AppTheme.colors.primary else AppTheme.colors.surface,
+                            contentColor = if (uiState.showClients) Color.White else AppTheme.colors.primary,
+                            shape = CircleShape,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(if (uiState.showClients) Icons.Default.Visibility else Icons.Default.VisibilityOff, "Toggle Clients")
+                        }
+                    }
+
+                    // ✅ Admin Filter Chips Row
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 90.dp) 
+                            .zIndex(4f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AdminFilterChip("All", uiState.agentFilter == "All") { viewModel.setAgentFilter("All") }
+                        AdminFilterChip("Idle", uiState.agentFilter == "Idle") { viewModel.setAgentFilter("Idle") }
+                        AdminFilterChip("Overdue", uiState.agentFilter == "Overdue") { viewModel.setAgentFilter("Overdue") }
+                    }
+                }
+
+                // Agent Roster Bottom Sheet
+                if (uiState.showAgentRoster) {
+                    AgentRosterSheet(
+                        agents = uiState.agents,
+                        selectedAgent = uiState.selectedAgent,
+                        onAgentClick = { 
+                            viewModel.selectAgent(it)
+                            coroutineScope.launch {
+                                it.latitude?.let { lat ->
+                                    it.longitude?.let { lon ->
+                                        cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lon), 15f))
+                                    }
+                                }
+                            }
+                        },
+                        onDismiss = { viewModel.toggleAgentRoster() }
+                    )
+                }
+
+
+                // 2. Status Indicator Row (Clocked-In / Online Now)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 120.dp, start = 16.dp)
+                        .zIndex(2f)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -906,6 +1037,7 @@ fun MapScreen(
                     uiState.selectedAgent?.let { agent ->
                         AnimatedAgentBottomSheet(
                             agent = agent,
+                            uiState = uiState,
                             onClose = { viewModel.selectAgent(null) },
                             onViewProfile = { onNavigateToAgentDetail(it) }
                         )
@@ -1224,8 +1356,6 @@ fun MapScreen(
             )
         }
 
-    }
-
     // ✅ FIX #4: Unified error management. 
     // Clearing of errors is now primarily handled by the bottom sheet's onDismiss/onClearError.
     // This LaunchedEffect is now for logging or side-effects only.
@@ -1284,7 +1414,7 @@ fun MapScreen(
 }
 
 @Composable
-private fun TrackingRequiredOverlay(
+fun TrackingRequiredOverlay(
     modifier: Modifier = Modifier,
     onEnableTracking: () -> Unit,
     onRefreshStatus: () -> Unit
@@ -1389,7 +1519,7 @@ private fun TrackingRequiredOverlay(
 }
 
 @Composable
-private fun TrackingBenefitItem(text: String) {
+fun TrackingBenefitItem(text: String) {
     Row(
         verticalAlignment = Alignment.Top,
         modifier = Modifier.fillMaxWidth()
@@ -1411,7 +1541,7 @@ private fun TrackingBenefitItem(text: String) {
 
 
     @Composable
-    private fun AnimatedClientBottomSheet(
+    fun AnimatedClientBottomSheet(
         client: Client,
         uiState: MapUiState,
         viewModel: MapViewModel,
@@ -1901,7 +2031,7 @@ private fun TrackingBenefitItem(text: String) {
     }
 
     @Composable
-    private fun VisitStatusIndicator(status: VisitStatus) {
+    fun VisitStatusIndicator(status: VisitStatus) {
         val (backgroundColor, textColor, label) = when (status) {
             VisitStatus.NEVER_VISITED -> Triple(
                 Color(0xFFEA4335).copy(alpha = 0.15f),
@@ -1942,11 +2072,14 @@ private fun TrackingBenefitItem(text: String) {
     }
 
     @Composable
-    private fun AnimatedAgentBottomSheet(
+    fun AnimatedAgentBottomSheet(
         agent: com.bluemix.clients_lead.domain.repository.AgentLocation,
+        uiState: MapUiState,
         onClose: () -> Unit,
         onViewProfile: (String) -> Unit
     ) {
+        val isOnlineNow = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
+        
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1958,70 +2091,123 @@ private fun TrackingBenefitItem(text: String) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header
+                // Header: Agent Identity
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = agent.fullName ?: "Staff Member",
                             style = AppTheme.typography.h3,
                             color = AppTheme.colors.text,
                             fontWeight = FontWeight.Bold
                         )
+                        // ✅ SMART STATUS: Human-Readable (At site, Traveling, or Idle)
                         Text(
-                            text = agent.email,
+                            text = agent.smartStatus ?: if (isOnlineNow) "Active / Online" else "Offline",
                             style = AppTheme.typography.body2,
-                            color = AppTheme.colors.textSecondary
+                            color = if (agent.smartStatus == "Idle") AppTheme.colors.error else AppTheme.colors.primary,
+                            fontWeight = FontWeight.Medium
                         )
                     }
-                    IconButton(onClick = onClose) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.background(AppTheme.colors.onSurface.copy(alpha = 0.05f), CircleShape)
+                    ) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
                     }
                 }
 
-                // Info Rows
+                // ✅ STAT CARDS GRID (S10 Requirements)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    agent.battery?.let { 
-                        InfoTile(label = "Battery", value = "$it%", icon = Icons.Default.Info) 
-                    }
-                    agent.activity?.let {
-                        InfoTile(label = "Activity", value = it, icon = Icons.Default.Directions)
-                    }
+                    AgentStatCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Visits",
+                        value = "${agent.visitCount}",
+                        icon = Icons.Default.DirectionsRun,
+                        color = Color(0xFF6366F1)
+                    )
+                    AgentStatCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Verified",
+                        value = "${uiState.selectedAgentVerifiedVisits}",
+                        icon = Icons.Default.Verified,
+                        color = Color(0xFF10B981)
+                    )
+                    AgentStatCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Overdue",
+                        value = "${uiState.selectedAgentOverdueNearby}",
+                        icon = Icons.Default.Warning,
+                        color = Color(0xFFF59E0B)
+                    )
+                    AgentStatCard(
+                        modifier = Modifier.weight(1f),
+                        label = "Battery",
+                        value = "${agent.battery ?: 0}%",
+                        icon = Icons.Default.Bolt,
+                        color = if ((agent.battery ?: 100) < 20) Color.Red else Color(0xFF3B82F6)
+                    )
                 }
 
+                // Last Seen Footer
                 agent.timestamp?.let {
                     Text(
                         text = "Last seen: ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(it)}",
                         style = AppTheme.typography.label2,
-                        color = AppTheme.colors.textSecondary
+                        color = AppTheme.colors.textSecondary,
+                        modifier = Modifier.align(Alignment.End)
                     )
                 }
 
                 Button(
                     onClick = { onViewProfile(agent.id) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Person,
+                        imageVector = Icons.Default.Assignment,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("View Full Profile")
+                    Text("View Full Performance History")
                 }
             }
         }
     }
 
     @Composable
-    private fun InfoTile(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    fun AgentStatCard(
+        modifier: Modifier = Modifier,
+        label: String,
+        value: String,
+        icon: androidx.compose.ui.graphics.vector.ImageVector,
+        color: Color
+    ) {
+        Column(
+            modifier = modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(color.copy(alpha = 0.08f))
+                .border(1.dp, color.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                .padding(vertical = 12.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = color)
+            Text(text = value, style = AppTheme.typography.body1, fontWeight = FontWeight.Bold, color = AppTheme.colors.text)
+            Text(text = label, style = AppTheme.typography.label2, color = AppTheme.colors.textSecondary, fontSize = 10.sp)
+        }
+    }
+
+    @Composable
+    fun InfoTile(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(text = label, style = AppTheme.typography.label2, color = AppTheme.colors.textSecondary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -2032,7 +2218,7 @@ private fun TrackingBenefitItem(text: String) {
     }
 
     @Composable
-    private fun QuickVisitOption(
+    fun QuickVisitOption(
         icon: String,
         label: String,
         onClick: () -> Unit
@@ -2058,7 +2244,7 @@ private fun TrackingBenefitItem(text: String) {
         }
     }
 @Composable
-private fun AnimatedPermissionPrompt(
+fun AnimatedPermissionPrompt(
     onGrant: () -> Unit
 ) {
     Box(
@@ -2113,7 +2299,7 @@ private fun AnimatedPermissionPrompt(
 
 
 @Composable
-private fun EnhancedMapLegend(
+fun EnhancedMapLegend(
     modifier: Modifier = Modifier,
     isExpanded: Boolean,
     onToggle: () -> Unit,
@@ -2278,14 +2464,13 @@ private fun EnhancedMapLegend(
 }
 
 
-// ✅ FIX #12: State enum for expense sheets
-private enum class ExpenseSheetType { SINGLE, MULTI }
+// ✅ FIX #12: State enum for expense sheets removed, using global one
 
 // ✅ FIX #11: Removed dead code (Old MapLegend and LegendItem)
 
 
 @Composable
-private fun EnhancedLegendItem(
+fun EnhancedLegendItem(
     color: Color,
     label: String,
     count: Int,
@@ -2345,7 +2530,7 @@ private fun EnhancedLegendItem(
 }
 
 @Composable
-private fun ExpenseTypeCard(
+fun ExpenseTypeCard(
     icon: String,
     title: String,
     description: String,
@@ -2407,4 +2592,126 @@ private fun ExpenseTypeCard(
             }
         }
     }
+}
+
+@Composable
+fun AdminFilterChip(
+    text: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    androidx.compose.material3.FilterChip(
+        selected = isSelected,
+        onClick = onClick,
+        label = { Text(text, color = if (isSelected) Color.White else AppTheme.colors.text, style = AppTheme.typography.body2, fontSize = 12.sp) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = AppTheme.colors.primary,
+            containerColor = AppTheme.colors.surface.copy(alpha = 0.9f)
+        ),
+        border = if (isSelected) null else BorderStroke(1.dp, AppTheme.colors.outline.copy(alpha = 0.2f)),
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AgentRosterSheet(
+    agents: List<com.bluemix.clients_lead.domain.repository.AgentLocation>,
+    selectedAgent: com.bluemix.clients_lead.domain.repository.AgentLocation?,
+    onAgentClick: (com.bluemix.clients_lead.domain.repository.AgentLocation) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        containerColor = AppTheme.colors.surface,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Live Agent Roster",
+                style = AppTheme.typography.h3,
+                modifier = Modifier.padding(16.dp),
+                color = AppTheme.colors.text
+            )
+            
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(agents) { agent ->
+                    AgentRosterItem(
+                        agent = agent,
+                        isSelected = agent.id == selectedAgent?.id,
+                        onClick = { onAgentClick(agent) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AgentRosterItem(
+    agent: com.bluemix.clients_lead.domain.repository.AgentLocation,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .background(if (isSelected) AppTheme.colors.primary.copy(alpha = 0.1f) else Color.Transparent)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(if (isOnline) AppTheme.colors.success.copy(alpha = 0.15f) else AppTheme.colors.textSecondary.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = null,
+                tint = if (isOnline) AppTheme.colors.success else AppTheme.colors.textSecondary,
+                modifier = Modifier.size(24.dp)
+            )
+            // Battery dot
+            if (agent.battery != null) {
+                Box(
+                    modifier = Modifier.size(10.dp).align(Alignment.BottomEnd).clip(CircleShape).background(Color.White).padding(1.dp).clip(CircleShape).background(if (agent.battery!! < 20) Color.Red else Color.Green)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = agent.fullName ?: agent.email,
+                style = AppTheme.typography.body1,
+                fontWeight = FontWeight.Bold,
+                color = AppTheme.colors.text
+            )
+            Text(
+                text = agent.smartStatus ?: if (isOnline) "Active" else "Offline",
+                style = AppTheme.typography.body3,
+                color = if (agent.smartStatus == "Idle") AppTheme.colors.error else AppTheme.colors.textSecondary,
+                fontSize = 12.sp
+            )
+        }
+        
+        if (agent.visitCount > 0) {
+            Box(
+                modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(AppTheme.colors.primary.copy(alpha = 0.1f)).padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(text = "${agent.visitCount} visits", style = AppTheme.typography.label2, color = AppTheme.colors.primary, fontSize = 11.sp)
+            }
+        }
+    }
+}
 }

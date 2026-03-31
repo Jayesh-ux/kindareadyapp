@@ -7,6 +7,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.app.NotificationManager
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +28,9 @@ class LocationTrackingStateManager(
     private val trackingManager: LocationTrackingManager   // <-- injected small manager
 ) {
 
+    // ✅ FIXED: Class-level scope so it can be cancelled in cleanup() to prevent leaks
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     private val locationSettingsMonitor = LocationSettingsMonitor(appContext)
     private val _trackingState = MutableStateFlow(false)
     val trackingState: StateFlow<Boolean> = _trackingState.asStateFlow()
@@ -36,8 +43,8 @@ class LocationTrackingStateManager(
     private fun startLocationSettingsMonitoring() {
         locationSettingsMonitor.startMonitoring()
 
-        // React to location settings changes
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+        // ✅ FIXED: Use class-level scope instead of anonymous CoroutineScope that leaked
+        scope.launch {
             locationSettingsMonitor.isLocationEnabled.collect { enabled ->
                 Timber.tag(TAG).d("Location enabled state changed: $enabled")
 
@@ -53,9 +60,10 @@ class LocationTrackingStateManager(
         }
     }
 
-    // 👇 Add cleanup method
+    // ✅ FIXED: Now also cancels the class-level scope to stop the settings monitor coroutine
     fun cleanup() {
         locationSettingsMonitor.stopMonitoring()
+        scope.cancel()
     }
 
 

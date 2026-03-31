@@ -41,9 +41,12 @@ object ApiEndpoints {
 
     object Admin {
         const val TEAM_LOCATIONS = "/admin/team-locations"
+        const val LIVE_AGENTS = "/admin/agents/live"
+        const val DAILY_SUMMARY = "/admin/daily-summary"
         const val CLIENT_SERVICES = "/admin/client-services"
         const val DASHBOARD_STATS = "/admin/stats"
         fun updateUserStatus(userId: String) = "/admin/users/$userId/status"
+        fun agentJourney(agentId: String, date: String) = "/admin/journey/$agentId/$date"
     }
 
     /**

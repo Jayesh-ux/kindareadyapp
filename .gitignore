@@ -12,6 +12,7 @@ build/
 **/build/
 local.properties
 *.apk
+*.aab
 
 # -------------------------------
 # Logs & Reports
@@ -20,12 +21,14 @@ local.properties
 *.txt
 
 # -------------------------------
-# Temp / Junk
+# Temp / Debug / Junk
 # -------------------------------
 tmp/
 temp_*
 tmp_*
 *.tmp
+debug_result.json
+tmp_dump_output.json
 
 # -------------------------------
 # Archives
@@ -34,17 +37,18 @@ tmp_*
 *.rar
 
 # -------------------------------
-# Docs / unnecessary files
+# Docs / Generated reports
 # -------------------------------
 *.docx
-parsed_errors.md
 *.html
+parsed_errors.md
 
 # -------------------------------
 # IDE / Editor
 # -------------------------------
 .vscode/
 .idea/
+*.iml
 
 # -------------------------------
 # OS files
@@ -53,13 +57,27 @@ parsed_errors.md
 Thumbs.db
 
 # -------------------------------
-# Secrets
+# Secrets & Credentials
 # -------------------------------
 .env
 token.json
+*.keystore
+*.jks
 
 # -------------------------------
-# Custom scripts (optional)
+# Debug/Dev scripts (wrong repo)
 # -------------------------------
+check_schema.js
+convert_log.py
+extract_backend.py
 generate_test_data.py
+list_zips.py
+verify_multi_agent.js
 test_admin_logs.js
+tmp_doc.xml
+lumo.properties
+
+# -------------------------------
+# Kotlin caches
+# -------------------------------
+.kotlin/

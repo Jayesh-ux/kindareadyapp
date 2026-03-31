@@ -59,7 +59,8 @@ object ApiClientProvider {
             socketTimeoutMillis = 30_000
         }
 
-        // Validate responses (throws exception on non-2xx status codes)
-        expectSuccess = true
+        // ✅ FIXED: expectSuccess = false — let repositories handle errors via runAppCatching.
+        // Setting true fights the SessionInvalidationPlugin that needs to read 401 body text.
+        expectSuccess = false
     }
 }

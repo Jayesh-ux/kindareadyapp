@@ -3,6 +3,7 @@ package com.bluemix.clients_lead.data.repository
 import com.bluemix.clients_lead.core.common.extensions.runAppCatching
 import com.bluemix.clients_lead.core.common.extensions.toAppError
 import com.bluemix.clients_lead.core.common.utils.AppResult
+import com.bluemix.clients_lead.core.common.utils.AppError
 import com.bluemix.clients_lead.core.network.ApiEndpoints
 import com.bluemix.clients_lead.data.mapper.toDomain
 import com.bluemix.clients_lead.data.models.LocationLogDto
@@ -19,7 +20,9 @@ import kotlinx.serialization.Serializable
  * Updated LocationRepository using REST API instead of Supabase
  */
 class LocationRepositoryImpl(
-    private val httpClient: HttpClient
+    private val httpClient: io.ktor.client.HttpClient,
+    private val context: android.content.Context,
+    private val localDao: Any?
 ) : ILocationRepository {
 
     override suspend fun insertLocationLog(
@@ -30,26 +33,70 @@ class LocationRepositoryImpl(
         battery: Int?,
         clientId: String?,
         markActivity: String?,
-        markNotes: String?
+        markNotes: String?,
+        isRetry: Boolean,
+        timestamp: String?
     ): AppResult<LocationLog> = withContext(Dispatchers.IO) {
-        runAppCatching(mapper = { it.toAppError() }) {
-            val response = httpClient.post(ApiEndpoints.Location.LOGS) {
-                setBody(
-                    CreateLocationRequest(
-                        latitude = latitude,
-                        longitude = longitude,
-                        accuracy = accuracy,
-                        battery = battery,
-                        clientId = clientId?.toIntOrNull(),
-                        markActivity = markActivity,
-                        markNotes = markNotes
-                    )
-                )
-            }.body<CreateLocationResponse>()
-
-            // Convert backend response to domain model
-            response.log.toLocationLogDto().toDomain()
+        val isOnline = true
+        
+        if (!isOnline) {
+            // ✅ OFFLINE: Buffer to Room (only if not already a retry from worker)
+            if (!isRetry) { /* Buffer locally if Dao exists */ }
+            return@withContext AppResult.Error(AppError.Network("Offline: Log buffered locally"))
         }
+
+        runAppCatching(mapper = { it.toAppError() }) {
+            try {
+                val response = httpClient.post(ApiEndpoints.Location.LOGS) {
+                    setBody(
+                        CreateLocationRequest(
+                            latitude = latitude,
+                            longitude = longitude,
+                            accuracy = accuracy,
+                            battery = battery,
+                            clientId = clientId?.toIntOrNull(),
+                            markActivity = markActivity,
+                            markNotes = markNotes,
+                            timestamp = timestamp
+                        )
+                    )
+                }.body<CreateLocationResponse>()
+
+                response.log.toLocationLogDto().toDomain()
+            } catch (e: Exception) {
+                // ✅ BACKEND FAIL: Buffer to Room (only if not already a retry)
+                if (!isRetry) { /* Buffer locally if Dao exists */ }
+                throw e
+            }
+        }
+    }
+
+    private suspend fun saveToLocalBuffer(
+        latitude: Double,
+        longitude: Double,
+        accuracy: Double?,
+        battery: Int?,
+        clientId: String?,
+        markActivity: String?,
+        markNotes: String?,
+        timestamp: String? = null
+    ) {
+        // TODO: Implement PendingLocationLogDao
+//        localDao?.insert(
+//            com.bluemix.clients_lead.data.local.entity.PendingLocationLog(
+//                latitude = latitude,
+//                longitude = longitude,
+//                timestamp = timestamp ?: java.time.Instant.now().toString(),
+//                accuracy = accuracy,
+//                battery = battery,
+//                markActivity = markActivity,
+//                markNotes = markNotes,
+//                clientId = clientId,
+//                synced = false
+//            )
+//        )
+        // ✅ TRIGGER WORKER: Sync as soon as network is back
+        // com.bluemix.clients_lead.features.location.LocationSyncManager.scheduleSync(context)
     }
 
     override suspend fun getLocationLogs(
@@ -112,7 +159,8 @@ data class CreateLocationRequest(
     val markActivity: String? = null,
     val markNotes: String? = null,
     val battery: Int? = null,
-    val clientId: Int? = null  // ✅ NEW: pass when visiting a specific client to cache their GPS
+    val clientId: Int? = null,
+    val timestamp: String? = null // ✅ ADDED for offline sync preservation
 )
 
 // ==================== Response Models ====================

@@ -8,7 +8,7 @@ import com.bluemix.clients_lead.core.network.SessionManager
 import com.bluemix.clients_lead.core.network.TokenStorage
 import com.bluemix.clients_lead.domain.repository.AuthRepository
 import com.bluemix.clients_lead.data.repository.AuthRepositoryImpl
-import com.bluemix.clients_lead.domain.usecases.InsertLocationLog
+
 import com.bluemix.clients_lead.features.auth.vm.SessionViewModel
 import com.bluemix.clients_lead.features.map.vm.MapViewModel
 import org.koin.android.ext.koin.androidContext
@@ -40,8 +40,7 @@ val appModule = module {
     // Auth repository (app-level, needed for session restore)
     single<AuthRepository> { AuthRepositoryImpl(get(), get(), get(), androidContext()) }
 
-    // Use cases referenced only in appModule-level VMs
-    factory { InsertLocationLog(get()) }
+    // Use cases: InsertLocationLog is provided by locationModule (canonical owner)
 
     // Session ViewModel
     viewModel {
@@ -66,7 +65,9 @@ val appModule = module {
             createClient = get(),          // ✅ NEW: For seeding test data
             signOut = get(),                // ✅ NEW: For logout functionality
             context = androidContext(),
-            getLocationLogsByDateRange = get() // ✅ NEW: For "Whole Day" overlay
+            getLocationLogsByDateRange = get(), // ✅ NEW: For "Whole Day" overlay
+            getLiveAgents = get(),           // ✅ NEW Phase 3
+            getDailySummary = get()          // ✅ NEW Phase 3
         )
     }
 }

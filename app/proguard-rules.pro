@@ -52,3 +52,28 @@
 -keep class com.bluemix.clients_lead.data.repository.** { *; }
 -keep class com.bluemix.clients_lead.domain.repository.** { *; }
 -keep class com.bluemix.clients_lead.domain.model.** { *; }
+
+# --- Ktor Content Negotiation (prevents release-build crashes) ---
+-keep class io.ktor.serialization.** { *; }
+-keep class io.ktor.client.plugins.contentnegotiation.** { *; }
+-dontwarn io.ktor.serialization.**
+
+# --- Kotlinx Serialization (keep generated serializers) ---
+-keepclassmembers @kotlinx.serialization.Serializable class ** {
+    static ** INSTANCE;
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keepclasseswithmembers class **$$serializer { *; }
+
+# --- Google Maps & Places SDK ---
+-keep class com.google.android.gms.maps.** { *; }
+-keep class com.google.android.libraries.places.** { *; }
+-dontwarn com.google.android.gms.**
+
+# --- Coil (image loading) ---
+-keep class coil.** { *; }
+-dontwarn coil.**
+
+# --- ML Kit ---
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**

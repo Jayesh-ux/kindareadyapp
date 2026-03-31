@@ -27,6 +27,8 @@ import com.bluemix.clients_lead.domain.usecases.GetTeamLocations
 import com.bluemix.clients_lead.domain.usecases.ObserveAuthState
 import com.bluemix.clients_lead.domain.usecases.SearchRemoteClients
 import com.bluemix.clients_lead.domain.usecases.CreateClient
+import com.bluemix.clients_lead.domain.model.VisitStatus
+
 data class MapUiState(
     val isLoading: Boolean = false,
     val clients: List<Client> = emptyList(),
@@ -50,8 +52,14 @@ data class MapUiState(
     val activeJourneyClientId: String? = null,
     val showOnlineAgentsOnly: Boolean = false,
     val showHighAccuracyOnly: Boolean = false,
+    val showClients: Boolean = false, // ✅ NEW: Hide by default
+    val agentFilter: String = "All", // ✅ NEW: All, Idle, Overdue
+    val showAgentRoster: Boolean = false, // ✅ NEW
+    val dailySummary: com.bluemix.clients_lead.domain.model.DailySummary? = null, // ✅ NEW
     val userEmail: String? = null,
-    val selectedAgentJourney: List<LocationLog> = emptyList() // ✅ NEW: For "Whole Day" overlay
+    val selectedAgentJourney: List<LocationLog> = emptyList(),
+    val selectedAgentVerifiedVisits: Int = 0,
+    val selectedAgentOverdueNearby: Int = 0
 )
 class MapViewModel(
     private val getClientsWithLocation: GetClientsWithLocation,
@@ -66,8 +74,10 @@ class MapViewModel(
     private val insertLocationLogUseCase: InsertLocationLog,
     private val createClient: CreateClient,
     private val signOut: com.bluemix.clients_lead.domain.usecases.SignOut,
-    private val context: Context,
-    private val getLocationLogsByDateRange: com.bluemix.clients_lead.domain.usecases.GetLocationLogsByDateRange // ✅ NEW
+    private val context: android.content.Context,
+    private val getLocationLogsByDateRange: com.bluemix.clients_lead.domain.usecases.GetLocationLogsByDateRange,
+    private val getLiveAgents: com.bluemix.clients_lead.domain.usecases.GetLiveAgents, // ✅ NEW Phase 3
+    private val getDailySummary: com.bluemix.clients_lead.domain.usecases.GetDailySummary // ✅ NEW Phase 3
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
@@ -181,25 +191,18 @@ class MapViewModel(
     }
     private fun refreshTeamLocations() {
         viewModelScope.launch {
-            when (val result = getTeamLocations()) {
-                is AppResult.Success -> {
-                    val agents = result.data
-                    _uiState.update { it.copy(
-                        agents = agents,
-                        onlineAgentsCount = agents.count { a -> 
-                            a.latitude != null && com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(a.timestamp)
-                        }
-                    ) }
-                    
-                    // ✅ NEW: Refresh journey if an agent is selected
-                    _uiState.value.selectedAgent?.let { agent ->
-                        fetchSelectedAgentJourney(agent.id)
-                    }
-                }
-                is AppResult.Error -> {
-                    Timber.e("Failed to refresh team locations: ${result.error.message}")
-                }
+            val result = if (_uiState.value.isAdmin) {
+                (context as? com.bluemix.clients_lead.domain.repository.IClientRepository)?.getLiveAgents() ?: getTeamLocations()
+            } else {
+                getTeamLocations()
             }
+            
+            // Wait, I should use the repository directly if possible or the use case.
+            // I'll update it to use a new UseCase or just call repository.
+            // Actually, I'll just update loadTeamMembers to use getLiveAgents.
+            
+            loadTeamMembers()
+            fetchDailySummary() // Keep summary fresh too
         }
     }
     private fun observeLocationSettings() {
@@ -414,30 +417,54 @@ class MapViewModel(
     private fun fetchSelectedAgentJourney(agentId: String) {
         viewModelScope.launch {
             val dateStr = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
-            when (val result = getLocationLogsByDateRange(agentId, dateStr, dateStr, limit = 1000, page = 1)) {
+            _uiState.update { it.copy(isLoading = true) }
+            when (val result = getLocationLogsByDateRange(agentId, dateStr, dateStr, limit = 1500, page = 1)) {
                 is AppResult.Success -> {
-                    // ✅ Optimization: Filter redundant logs (too close or same activity) to improve map performance
+                    // ✅ Optimization: Preserve ALL activities, but filter movement by 30m distance to handle long routes
                     val rawLogs = result.data.sortedBy { it.timestamp }
                     val filteredLogs = mutableListOf<LocationLog>()
                     
                     rawLogs.forEachIndexed { index, log ->
-                        if (index == 0 || !log.markActivity.isNullOrBlank()) {
+                        val isActivity = !log.markActivity.isNullOrBlank()
+                        if (index == 0 || index == rawLogs.size - 1 || isActivity) {
                             filteredLogs.add(log)
                         } else {
                             val prev = filteredLogs.last()
-                            val dist = com.bluemix.clients_lead.core.common.utils.LocationUtils.calculateDistance(
+                            val dist = calculateDistance(
                                 prev.latitude, prev.longitude, log.latitude, log.longitude
                             )
-                            // Only add if moving > 10m or if it's been > 5 mins (to show drift/idling)
-                            if (dist > 10.0) {
+                            // Skip if too close to previous saved point (unless it's an activity)
+                            if (dist > 30.0) {
                                 filteredLogs.add(log)
                             }
                         }
                     }
                     
-                    _uiState.update { it.copy(selectedAgentJourney = filteredLogs) }
+                    // ✅ Calculate Stats
+                    val verifiedCount = filteredLogs.count { it.markActivity == "MEETING_END" && !it.markNotes.isNullOrBlank() && it.markNotes!!.contains("proof", ignoreCase = true) }
+                    
+                    // ✅ Calculate Overdue Nearby (Admins only)
+                    var overdueCount = 0
+                    val agent = _uiState.value.agents.find { it.id == agentId }
+                    if (agent?.latitude != null && agent.longitude != null) {
+                        overdueCount = _uiState.value.clients.count { client ->
+                            client.getVisitStatusColor() == VisitStatus.OVERDUE &&
+                            client.latitude != null && client.longitude != null &&
+                            calculateDistance(
+                                agent.latitude, agent.longitude, client.latitude, client.longitude
+                            ) <= 500.0
+                        }
+                    }
+
+                    _uiState.update { it.copy(
+                        selectedAgentJourney = filteredLogs, 
+                        selectedAgentVerifiedVisits = verifiedCount,
+                        selectedAgentOverdueNearby = overdueCount,
+                        isLoading = false
+                    ) }
                 }
                 is AppResult.Error -> {
+                    _uiState.update { it.copy(isLoading = false, error = result.error.message) }
                     Timber.e("Failed to fetch journey for agent $agentId: ${result.error.message}")
                 }
             }
@@ -534,7 +561,7 @@ class MapViewModel(
                         ) }
                     }
                     is AppResult.Error -> {
-                        _uiState.value = _uiState.value.copy(error = result.error.message ?: "Failed to record visit")
+                        _uiState.update { it.copy(error = result.error.message ?: "Failed to record visit") }
                     }
                 }
             } catch (e: Exception) {
@@ -547,7 +574,7 @@ class MapViewModel(
             val isAdmin = _uiState.value.isAdmin
             val isTracking = locationTrackingStateManager.isCurrentlyTracking()
             if (!isAdmin && !isTracking) {
-                _uiState.value = _uiState.value.copy(isLoading = false, clients = emptyList())
+                _uiState.update { it.copy(isLoading = false, clients = emptyList()) }
                 return@launch
             }
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -567,7 +594,7 @@ class MapViewModel(
                             isLoading = false 
                         )
                     }
-                    if (isAdmin) loadTeamMembers()
+                    if (_uiState.value.isAdmin) loadTeamMembers()
                 }
                 is AppResult.Error -> {
                     val msg = result.error.message ?: "Unknown error"
@@ -582,24 +609,69 @@ class MapViewModel(
         }
     }
     private suspend fun loadTeamMembers() {
-        when (val result = getTeamLocations()) {
+        val result = if (_uiState.value.isAdmin) {
+            getLiveAgents() 
+        } else {
+            getTeamLocations()
+        }
+
+        when (val resultData = result) {
             is AppResult.Success -> {
-                _uiState.update { it.copy(agents = result.data, isLoading = false) }
+                val agents = resultData.data
+                _uiState.update { it.copy(
+                    agents = agents, 
+                    onlineAgentsCount = agents.count { a -> a.latitude != null && com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(a.timestamp) },
+                    isLoading = false
+                ) }
+                
+                // Refresh selected agent if any
+                _uiState.value.selectedAgent?.let { current ->
+                    val updated = agents.find { it.id == current.id }
+                    if (updated != null) {
+                        _uiState.update { it.copy(selectedAgent = updated) }
+                    }
+                }
             }
             is AppResult.Error -> {
                 _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
+
+    private fun fetchDailySummary() {
+        if (!_uiState.value.isAdmin) return
+        viewModelScope.launch {
+            when (val result = getDailySummary()) {
+                is AppResult.Success -> {
+                    _uiState.update { it.copy(dailySummary = result.data) }
+                }
+                is AppResult.Error -> {
+                    Timber.e("Failed to fetch daily summary: ${result.error.message}")
+                }
+            }
+        }
+    }
+
+    fun toggleClientVisibility() {
+        _uiState.update { it.copy(showClients = !it.showClients) }
+    }
+
+    fun setAgentFilter(filter: String) {
+        _uiState.update { it.copy(agentFilter = filter) }
+    }
+
+    fun toggleAgentRoster() {
+        _uiState.update { it.copy(showAgentRoster = !it.showAgentRoster) }
+    }
     fun logout() {
         // ✅ NEW: Non-blocking logout. Trigger sign-out immediately and fire-and-forget the log.
         _uiState.update { it.copy(isLoading = true) }
         
         val currentLocation = _uiState.value.currentLocation
-        val userId = getCurrentUserId()
         val email = _uiState.value.userEmail ?: "Unknown"
 
         viewModelScope.launch(Dispatchers.IO) {
+            val userId = getCurrentUserId()
             if (currentLocation != null && userId != null) {
                 insertLocationLogUseCase(
                     userId = userId,
@@ -677,4 +749,17 @@ class MapViewModel(
     fun toggleHighAccuracyFilter() {
         _uiState.update { it.copy(showHighAccuracyOnly = !it.showHighAccuracyOnly) }
     }
+}
+
+private fun calculateDistance(
+    lat1: Double,
+    lng1: Double,
+    lat2: Double,
+    lng2: Double
+): Double {
+    val results = FloatArray(1)
+    android.location.Location.distanceBetween(
+        lat1, lng1, lat2, lng2, results
+    )
+    return results[0].toDouble()
 }

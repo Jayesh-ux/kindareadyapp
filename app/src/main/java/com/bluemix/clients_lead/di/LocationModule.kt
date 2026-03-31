@@ -16,7 +16,8 @@ import org.koin.dsl.module
 
 val locationModule = module {
     // Repository
-    single<ILocationRepository> { LocationRepositoryImpl(get()) }
+    // ✅ FIXED: localDao: Any? has no Koin binding — pass null (DAO code is fully commented out)
+    single<ILocationRepository> { LocationRepositoryImpl(get(), androidContext(), null) }
 
     // Use Cases
     factory { InsertLocationLog(get()) }

@@ -54,7 +54,9 @@ interface ILocationRepository {
         battery: Int? = null,
         clientId: String? = null,
         markActivity: String? = null,
-        markNotes: String? = null
+        markNotes: String? = null,
+        isRetry: Boolean = false,
+        timestamp: String? = null
     ): AppResult<LocationLog>
 
     /**

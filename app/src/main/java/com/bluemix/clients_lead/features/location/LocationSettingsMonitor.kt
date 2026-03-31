@@ -17,7 +17,7 @@ import timber.log.Timber
  */
 class LocationSettingsMonitor(private val context: Context) {
 
-    private val _isLocationEnabled = MutableStateFlow(false)
+    private val _isLocationEnabled = MutableStateFlow(checkLocationEnabled())
     val isLocationEnabled: StateFlow<Boolean> = _isLocationEnabled.asStateFlow()
 
     private val locationReceiver = object : BroadcastReceiver() {

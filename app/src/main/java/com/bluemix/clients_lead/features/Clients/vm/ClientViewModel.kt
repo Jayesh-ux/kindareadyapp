@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluemix.clients_lead.core.common.utils.AppResult
-import com.bluemix.clients_lead.core.network.ApiClientProvider
 import com.bluemix.clients_lead.core.network.ApiEndpoints
 import com.bluemix.clients_lead.core.network.SessionManager
 import com.bluemix.clients_lead.core.network.TokenStorage
@@ -70,7 +69,8 @@ class ClientsViewModel(
     private val locationTrackingStateManager: LocationTrackingStateManager,
     private val context: Context,
     private val createClient: CreateClient,
-    private val observeAuthState: com.bluemix.clients_lead.domain.usecases.ObserveAuthState // ✅ NEW
+    private val observeAuthState: com.bluemix.clients_lead.domain.usecases.ObserveAuthState,
+    private val httpClient: io.ktor.client.HttpClient // ✅ FIXED P2: inject shared client
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ClientsUiState())
@@ -494,12 +494,9 @@ class ClientsViewModel(
                     return@launch
                 }
 
-                // ✅ Pass sessionManager to ApiClientProvider
-                val client = ApiClientProvider.create(
-                    baseUrl = ApiEndpoints.BASE_URL,
-                    tokenStorage = tokenStorage,
-                    sessionManager = sessionManager // ✅ Fixed!
-                )
+                // ✅ FIXED P2: Use the injected shared HttpClient instead of creating a new
+                // OkHttp pool on every upload (was an unmanaged resource leak).
+                val client = httpClient
 
                 val response: HttpResponse = client.submitFormWithBinaryData(
                     url = "${ApiEndpoints.BASE_URL}${ApiEndpoints.Clients.UPLOAD_EXCEL}",

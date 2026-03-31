@@ -6,9 +6,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,7 +62,7 @@ fun AdminDashboardScreen(
                 )
             }
         },
-        containerColor = Color(0xFF020617) // Slate 950
+        containerColor = Color(0xFF0F172A)
     ) { padding ->
         Column(
             modifier = Modifier
@@ -68,201 +70,179 @@ fun AdminDashboardScreen(
                 .padding(padding)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color(0xFF020617), Color(0xFF0F172A))
+                        colors = listOf(Color(0xFF0F172A), Color(0xFF020617))
                     )
                 )
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(28.dp)
         ) {
-            // Summary Stats Grid
+            // Summary Stats Grid - Glass Effect
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = "Overview",
+                    style = AppTheme.typography.label1,
+                    color = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(start = 4.dp)
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     StatCard(
-                        title = "Active Agents",
+                        title = "Active",
                         value = uiState.activeAgentsCount.toString(),
-                        icon = Icons.Default.Groups,
+                        icon = Icons.Default.Bolt,
                         color = Color(0xFF10B981), // Emerald 500
                         modifier = Modifier.weight(1f)
                     )
                     StatCard(
-                        title = "Total Clients",
-                        value = uiState.totalClients.toString(),
-                        icon = Icons.Default.Store,
+                        title = "Verified",
+                        value = "${uiState.gpsVerifiedCount}%",
+                        icon = Icons.Default.Verified,
                         color = Color(0xFF3B82F6), // Blue 500
                         modifier = Modifier.weight(1f)
                     )
                     StatCard(
-                        title = "Hidden Clients",
+                        title = "Pending",
                         value = uiState.hiddenClientsCount.toString(),
-                        icon = Icons.Default.LocationOff,
-                        color = Color(0xFFEF4444), // Red 500
+                        icon = Icons.Default.Warning,
+                        color = Color(0xFFF59E0B), // Amber 500
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            // Navigation Grid
-            Text(
-                text = "Operations Center",
-                style = AppTheme.typography.h3,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
-            )
+            // Operations Center
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Command Center",
+                    style = AppTheme.typography.h3,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    AdminNavCard(
-                        title = "Live Map",
-                        subtitle = "Real-time tracking",
-                        icon = Icons.Default.Map,
-                        onClick = onNavigateToMap,
-                        modifier = Modifier.weight(1f)
-                    )
-                    AdminNavCard(
-                        title = "Journey Logs",
-                        subtitle = "Daily route history",
-                        icon = Icons.Default.Route,
-                        onClick = { onNavigateToReports(null) },
-                        modifier = Modifier.weight(1f)
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        AdminNavCard(
+                            title = "Live Tracking",
+                            subtitle = "Monitor team movement",
+                            icon = Icons.Default.MyLocation,
+                            onClick = onNavigateToMap,
+                            modifier = Modifier.weight(1f),
+                            accentColor = Color(0xFF3B82F6)
+                        )
+                        AdminNavCard(
+                            title = "History",
+                            subtitle = "Analyze past logs",
+                            icon = Icons.Default.HistoryEdu,
+                            onClick = { onNavigateToReports(null) },
+                            modifier = Modifier.weight(1f),
+                            accentColor = Color(0xFF8B5CF6)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        AdminNavCard(
+                            title = "Team",
+                            subtitle = "Manage permissions",
+                            icon = Icons.Default.AdminPanelSettings,
+                            onClick = onNavigateToUsers,
+                            modifier = Modifier.weight(1f),
+                            accentColor = Color(0xFF10B981)
+                        )
+                        AdminNavCard(
+                            title = "Clients",
+                            subtitle = "Service database",
+                            icon = Icons.Default.AutoGraph,
+                            onClick = onNavigateToClientServices,
+                            modifier = Modifier.weight(1f),
+                            accentColor = Color(0xFFF59E0B)
+                        )
+                    }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    AdminNavCard(
-                        title = "Manage Team",
-                        subtitle = "Agents & Access",
-                        icon = Icons.Default.People,
-                        onClick = onNavigateToUsers,
-                        modifier = Modifier.weight(1f)
-                    )
-                    AdminNavCard(
-                        title = "Client Services",
-                        subtitle = "Database & visits",
-                        icon = Icons.Default.Inventory,
-                        onClick = onNavigateToClientServices,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                AdminNavCard(
-                    title = "Location Recovery",
-                    subtitle = "Trigger self-heal for hidden clients",
-                    icon = Icons.Default.AutoFixHigh,
+            }
+
+            // Quick Actions
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(
                     onClick = viewModel::retryGeocoding,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                AdminNavCard(
-                    title = "Meeting Logs",
-                    subtitle = "Team visit history",
-                    icon = Icons.Default.History,
-                    onClick = onNavigateToMeetingLogs,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            // Financials & Subscription
-            Text(
-                text = "Financials & Subscription",
-                style = AppTheme.typography.h3,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
-            )
-
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.White.copy(alpha = 0.05f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
                 ) {
-                    AdminNavCard(
-                        title = "Bank Accounts",
-                        subtitle = "Manager user UPI/Bank",
-                        icon = Icons.Default.AccountBalance,
-                        onClick = onNavigateToBankAccount,
-                        modifier = Modifier.weight(1f)
-                    )
-                    AdminNavCard(
-                        title = "Expand Capacity",
-                        subtitle = "Purchase more slots",
-                        icon = Icons.Default.AddBusiness,
-                        onClick = onNavigateToSlotExpansion,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Default.CloudSync, null, tint = Color(0xFF60A5FA), modifier = Modifier.size(20.dp))
+                        Column {
+                            Text("Self-Heal Database", color = Color.White, style = AppTheme.typography.body1, fontWeight = FontWeight.Bold)
+                            Text("Recover missing client locations", color = Color.White.copy(alpha = 0.5f), style = AppTheme.typography.body3)
+                        }
+                    }
                 }
-                AdminNavCard(
-                    title = "Plan Usage",
-                    subtitle = "Subscription & limits",
-                    icon = Icons.Default.Analytics,
-                    onClick = onNavigateToPlanUsage,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
 
             // Team Activity List Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Team Activity",
-                    style = AppTheme.typography.h3,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (uiState.isClearingLogs) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    TextButton(onClick = { viewModel.clearAllLogs() }) {
-                        Text("Clear", color = Color(0xFFEF4444), fontSize = 12.sp)
-                    }
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Real-time Field Activity",
+                        style = AppTheme.typography.h3,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                     IconButton(onClick = viewModel::refreshDashboard) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF3B82F6))
                     }
                 }
-            }
 
-            if (uiState.isLoading && uiState.agents.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFF3B82F6))
-                }
-            } else {
-                uiState.agents.forEach { agent ->
-                    AgentActivityRow(
-                        agent = agent,
-                        onClick = { onNavigateToAgentDetail(agent.id) }
-                    )
-                }
-                
-                if (uiState.agents.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No recent team activity",
-                            color = Color.Gray,
-                            style = AppTheme.typography.body2
-                        )
+                if (uiState.isLoading && uiState.agents.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF3B82F6), strokeWidth = 3.dp)
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        uiState.agents.forEach { agent ->
+                            AgentActivityRow(
+                                agent = agent,
+                                onClick = { onNavigateToAgentDetail(agent.id) }
+                            )
+                        }
+                    }
+                    
+                    if (uiState.agents.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Waiting for team movement...",
+                                color = Color.White.copy(alpha = 0.3f),
+                                style = AppTheme.typography.body2
+                            )
+                        }
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(24.dp))
             }
+            
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -277,30 +257,45 @@ private fun StatCard(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(color.copy(alpha = 0.1f))
-            .border(1.dp, color.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(color.copy(alpha = 0.15f), color.copy(alpha = 0.05f))
+                )
+            )
+            .border(1.dp, color.copy(alpha = 0.2f), RoundedCornerShape(24.dp))
             .padding(16.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(24.dp)
-            )
-            Text(
-                text = value,
-                style = AppTheme.typography.h2,
-                color = Color.White,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 28.sp
-            )
-            Text(
-                text = title,
-                style = AppTheme.typography.label2,
-                color = Color.White.copy(alpha = 0.6f)
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Surface(
+                modifier = Modifier.size(36.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = color.copy(alpha = 0.2f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Column {
+                Text(
+                    text = value,
+                    style = AppTheme.typography.h2,
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 24.sp
+                )
+                Text(
+                    text = title,
+                    style = AppTheme.typography.label2,
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }
@@ -311,49 +306,38 @@ private fun AdminNavCard(
     subtitle: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accentColor: Color = Color(0xFF3B82F6)
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(22.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
-                )
-            )
-            .border(0.5.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color(0xFF1E293B).copy(alpha = 0.4f))
+            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
             .clickable(onClick = onClick)
             .padding(20.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF3B82F6).copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = Color(0xFF60A5FA),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = title,
                 style = AppTheme.typography.h4,
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+                fontSize = 17.sp
             )
             Text(
                 text = subtitle,
                 style = AppTheme.typography.body3,
-                color = Color.White.copy(alpha = 0.5f),
+                color = Color.White.copy(alpha = 0.4f),
                 fontSize = 11.sp,
-                lineHeight = 14.sp
+                lineHeight = 15.sp
             )
         }
     }
@@ -370,18 +354,16 @@ private fun AgentActivityRow(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFF0F172A).copy(alpha = 0.6f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = 0.03f))
             .clickable(onClick = onClick)
-            .padding(14.dp)
+            .padding(16.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Status indicator with glow
+            // Status indicator
             Box(contentAlignment = Alignment.Center) {
                 val statusColor = when {
                     !agent.isActive -> Color(0xFFEF4444)
@@ -390,81 +372,103 @@ private fun AgentActivityRow(
                     else -> Color(0xFF64748B)
                 }
                 
-                // Glow effect
-                Box(
-                    modifier = Modifier
-                        .size(14.dp)
-                        .clip(CircleShape)
-                        .background(statusColor.copy(alpha = 0.2f))
-                )
+                Surface(
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = statusColor.copy(alpha = 0.1f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = when {
+                                !agent.isActive -> Icons.Default.Block
+                                isInMeeting -> Icons.Default.Handshake
+                                isOnline -> Icons.Default.DirectionsRun
+                                else -> Icons.Default.NightsStay
+                            },
+                            contentDescription = null,
+                            tint = statusColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
                 
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(statusColor)
-                )
+                // Active Pulse for online agents
+                if (isOnline && agent.isActive && !isInMeeting) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                    val pulseScale by infiniteTransition.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 1.4f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1200, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "scale"
+                    )
+                    val pulseAlpha by infiniteTransition.animateFloat(
+                        initialValue = 0.4f,
+                        targetValue = 0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1200, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "alpha"
+                    )
+                    
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .graphicsLayer { 
+                                scaleX = pulseScale
+                                scaleY = pulseScale
+                                alpha = pulseAlpha
+                            }
+                            .border(2.dp, statusColor, CircleShape)
+                    )
+                }
             }
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = agent.fullName ?: agent.email,
-                        style = AppTheme.typography.body1,
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp
-                    )
-                    if (isInMeeting) {
-                        Badge(text = "MEETING", color = Color(0xFF8B5CF6))
-                    }
-                    if (!agent.isActive) {
-                        Badge(text = "DISABLED", color = Color(0xFFEF4444))
-                    }
-                }
+                Text(
+                    text = agent.fullName ?: agent.email,
+                    style = AppTheme.typography.body1,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
                 Text(
                     text = when {
-                        !agent.isActive -> "Account is currently disabled"
-                        isInMeeting -> "Currently in a meeting"
-                        isOnline -> agent.activity ?: "Active"
-                        else -> "Last seen ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}"
+                        !agent.isActive -> "Access Restricted"
+                        isInMeeting -> "In Visit with Client"
+                        isOnline -> agent.activity ?: "Moving on territory"
+                        else -> "Inactive for ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}"
                     },
                     style = AppTheme.typography.body3,
                     color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp
+                    fontSize = 13.sp
                 )
             }
 
             val battery = agent.battery
             if (battery != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(horizontalAlignment = Alignment.End) {
                     Icon(
-                        imageVector = if (battery > 80) Icons.Default.BatteryFull 
-                                     else if (battery > 20) Icons.Default.BatteryChargingFull 
-                                     else Icons.Default.BatteryAlert,
+                        imageVector = if (battery > 20) Icons.Default.BatteryChargingFull else Icons.Default.BatteryAlert,
                         contentDescription = null,
-                        tint = if (battery <= 20) Color(0xFFEF4444) else Color(0xFF10B981),
-                        modifier = Modifier.size(14.dp)
+                        tint = if (battery <= 20) Color(0xFFEF4444) else Color(0xFF10B981).copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = "${battery}%",
                         style = AppTheme.typography.body3,
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 11.sp
                     )
                 }
             }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.2f),
-                modifier = Modifier.size(20.dp)
-            )
         }
     }
 }
+
 
 @Composable
 private fun Badge(text: String, color: Color) {

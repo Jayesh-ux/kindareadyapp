@@ -5,6 +5,7 @@ import com.bluemix.clients_lead.domain.repository.IClientRepository
 import com.bluemix.clients_lead.domain.usecases.*
 import com.bluemix.clients_lead.features.Clients.vm.ClientDetailViewModel
 import com.bluemix.clients_lead.features.Clients.vm.ClientsViewModel
+import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 import com.bluemix.clients_lead.data.repository.OCRRepository
@@ -55,6 +56,8 @@ val clientModule = module {
     factory { AddClientService(repository = get()) }
     factory { AcceptClientService(repository = get()) }
     factory { RetryGeocoding(repository = get()) }
+    factory { GetLiveAgents(repository = get()) }
+    factory { GetDailySummary(repository = get()) }
     factory { OCRRepository() }
 
     // ViewModels
@@ -65,10 +68,11 @@ val clientModule = module {
             tokenStorage = get(),
             getCurrentUserId = get(),
             locationTrackingStateManager = get(),
-            context = get(),
+            context = androidContext(), // ✅ FIXED: was get(), Koin has no raw Context binding
             createClient = get(),
             sessionManager = get(),
-            observeAuthState = get() // ✅ NEW
+            observeAuthState = get(),
+            httpClient = get()  // ✅ FIXED P2: inject shared client, avoids resource leak
         )
     }
 
