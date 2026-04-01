@@ -717,23 +717,178 @@ fun MapScreen(
                     enter = fadeIn() + slideInVertically(),
                     exit = fadeOut() + slideOutVertically()
                 ) {
-                    TerritoryControlPanel(
-                        uiState = uiState,
-                        plottedClientCount = visibleClientMarkers.size,
-                        mappedClientCount = uiState.filteredClients.size,
-                        liveAgentCount = liveAgentCount,
-                        overdueClientCount = clientCounts[VisitStatus.OVERDUE] ?: 0,
-                        hiddenClientsCount = uiState.hiddenClientsCount,
-                        clientsVisible = if (uiState.isAdmin) uiState.showClients else canShowClientMarkers,
-                        onToggleAgentRoster = { viewModel.toggleAgentRoster() },
-                        onToggleOnlineAgentsOnly = { viewModel.toggleOnlineAgentsFilter() },
-                        onToggleHighAccuracyOnly = { viewModel.toggleHighAccuracyFilter() },
-                        onSelectAgentFilter = { viewModel.setAgentFilter(it) },
-                        searchSection = {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                ui.components.textfield.TextField(
-                                    value = uiState.searchQuery,
-                                    onValueChange = { viewModel.onSearchQueryChanged(it) },
+                    var showCommandCenterExpanded by remember { mutableStateOf(false) }
+
+                    // Compact status bar (dark theme)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp)),
+                        color = Color(0xFF0B1220).copy(alpha = 0.95f),
+                        tonalElevation = 4.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // Mapped
+                                Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.03f)).padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Icon(imageVector = Icons.Default.Place, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(16.dp))
+                                        Text(text = "${uiState.filteredClients.size} mapped", color = Color.White, style = AppTheme.typography.label2)
+                                    }
+                                }
+                                // Missing
+                                Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.03f)).padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Icon(imageVector = Icons.Default.LocationOff, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                                        Text(text = "${uiState.hiddenClientsCount} missing", color = Color.White, style = AppTheme.typography.label2)
+                                    }
+                                }
+                                // Live agents
+                                Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.03f)).padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Icon(imageVector = Icons.Default.People, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                                        Text(text = "$liveAgentCount live", color = Color.White, style = AppTheme.typography.label2)
+                                    }
+                                }
+                            }
+                            IconButton(onClick = { showCommandCenterExpanded = !showCommandCenterExpanded }) {
+                                Icon(imageVector = if (showCommandCenterExpanded) Icons.Default.ExpandLess else Icons.Default.Menu, contentDescription = "Open Command Center", tint = Color.White)
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(visible = showCommandCenterExpanded) {
+                        TerritoryControlPanel(
+                            modifier = Modifier
+                                .fillMaxWidth(0.95f)
+                                .padding(top = 8.dp),
+                            uiState = uiState,
+                            plottedClientCount = visibleClientMarkers.size,
+                            mappedClientCount = uiState.filteredClients.size,
+                            liveAgentCount = liveAgentCount,
+                            overdueClientCount = clientCounts[VisitStatus.OVERDUE] ?: 0,
+                            hiddenClientsCount = uiState.hiddenClientsCount,
+                            clientsVisible = if (uiState.isAdmin) uiState.showClients else canShowClientMarkers,
+                            onToggleAgentRoster = { viewModel.toggleAgentRoster() },
+                            onToggleOnlineAgentsOnly = { viewModel.toggleOnlineAgentsFilter() },
+                            onToggleHighAccuracyOnly = { viewModel.toggleHighAccuracyFilter() },
+                            onSelectAgentFilter = { viewModel.setAgentFilter(it) },
+                            searchSection = {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    ui.components.textfield.TextField(
+                                        value = uiState.searchQuery,
+                                        onValueChange = { viewModel.onSearchQueryChanged(it) },
+                                        placeholder = { Text("Search clients by name, address, or pincode...") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(AppTheme.colors.surface),
+                                        leadingIcon = {
+                                            if (uiState.isSearchingRemote) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(18.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = AppTheme.colors.primary
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = "Search",
+                                                    tint = AppTheme.colors.textSecondary
+                                                )
+                                            }
+                                        },
+                                        trailingIcon = {
+                                            if (uiState.searchQuery.isNotEmpty()) {
+                                                IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Clear search",
+                                                        tint = AppTheme.colors.textSecondary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    )
+
+                                    AnimatedVisibility(
+                                        visible = uiState.searchQuery.isNotEmpty() && uiState.filteredClients.isNotEmpty()
+                                    ) {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 8.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(AppTheme.colors.surface)
+                                                .border(1.dp, AppTheme.colors.outline.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                                                .heightIn(max = 280.dp)
+                                        ) {
+                                            val displayCount = 5
+                                            items(uiState.filteredClients.take(displayCount)) { client ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            viewModel.selectClient(client)
+                                                            coroutineScope.launch {
+                                                                cameraPositionState.animate(
+                                                                    update = CameraUpdateFactory.newLatLngZoom(
+                                                                        LatLng(client.latitude ?: 0.0, client.longitude ?: 0.0),
+                                                                        16f
+                                                                    ),
+                                                                    durationMs = 800
+                                                                )
+                                                            }
+                                                            viewModel.onSearchQueryChanged("")
+                                                        }
+                                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(36.dp)
+                                                            .clip(CircleShape)
+                                                            .background(AppTheme.colors.primary.copy(alpha = 0.12f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.LocationOn,
+                                                            contentDescription = null,
+                                                            tint = AppTheme.colors.primary,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.width(12.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = client.name,
+                                                            style = AppTheme.typography.body1,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = AppTheme.colors.text
+                                                        )
+                                                        Text(
+                                                            text = client.address ?: "No address",
+                                                            style = AppTheme.typography.body3,
+                                                            color = AppTheme.colors.textSecondary,
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
                                     placeholder = { Text("Search clients by name, address, or pincode...") },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -2181,6 +2336,7 @@ fun AnimatedPermissionPrompt(
 
 @Composable
 private fun TerritoryControlPanel(
+    modifier: Modifier = Modifier.fillMaxWidth(),
     uiState: MapUiState,
     plottedClientCount: Int,
     mappedClientCount: Int,
@@ -2195,7 +2351,7 @@ private fun TerritoryControlPanel(
     searchSection: @Composable () -> Unit
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         shape = RoundedCornerShape(28.dp),
         color = Color(0xFF08111D).copy(alpha = 0.92f),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
