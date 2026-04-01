@@ -66,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -117,8 +118,10 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.material3.*
+import com.bluemix.clients_lead.core.common.utils.DateTimeUtils
 import com.bluemix.clients_lead.core.common.utils.MapUtils
 import com.bluemix.clients_lead.R
+import com.bluemix.clients_lead.domain.repository.AgentLocation
 
 
 
@@ -213,6 +216,40 @@ fun MapScreen(
     }
 
     val isLocationEnabled by locationSettingsMonitor.isLocationEnabled.collectAsState()
+    val currentZoom = cameraPositionState.position.zoom
+    val showMarkers = uiState.isAdmin || uiState.isTrackingEnabled
+    val clientCounts = remember(uiState.filteredClients) {
+        calculateVisitStatusCounts(uiState.filteredClients)
+    }
+    val nearbyOverdueCounts = remember(uiState.agents, uiState.filteredClients) {
+        calculateNearbyOverdueCounts(uiState.agents, uiState.filteredClients)
+    }
+    val filteredAgentsForMap = remember(
+        uiState.agents,
+        uiState.agentFilter,
+        uiState.showOnlineAgentsOnly,
+        uiState.showHighAccuracyOnly,
+        nearbyOverdueCounts
+    ) {
+        filterAgentsForMap(
+            agents = uiState.agents,
+            agentFilter = uiState.agentFilter,
+            nearbyOverdueCounts = nearbyOverdueCounts,
+            showOnlineAgentsOnly = uiState.showOnlineAgentsOnly,
+            showHighAccuracyOnly = uiState.showHighAccuracyOnly
+        )
+    }
+    val canShowClientMarkers = showMarkers && if (uiState.isAdmin) {
+        uiState.showClients
+    } else {
+        currentZoom >= 13.0f || uiState.searchQuery.isNotEmpty()
+    }
+    val visibleClientMarkers = if (canShowClientMarkers) {
+        uiState.filteredClients.filter { filteredStatuses.contains(it.getVisitStatusColor()) }
+    } else {
+        emptyList()
+    }
+    val liveAgentCount = filteredAgentsForMap.count { DateTimeUtils.isRecent(it.timestamp) }
 
     // Show dialog when location is disabled - IMPROVED UI
     if (!isLocationEnabled && uiState.isTrackingEnabled) {
@@ -403,106 +440,74 @@ fun MapScreen(
                         mapToolbarEnabled = false
                     )
                 ) {
-                    val currentZoom = cameraPositionState.position.zoom
-                    val showMarkers = uiState.isAdmin || uiState.isTrackingEnabled
-                    // ✅ PHASE 3: Admins only see clients if specifically toggled or searching
-                    val showClientMarkers = showMarkers && (
-                        (uiState.isAdmin && (uiState.showClients || uiState.searchQuery.isNotEmpty())) ||
-                        (!uiState.isAdmin && (currentZoom >= 13.0f || uiState.searchQuery.isNotEmpty()))
-                    )
-
                     if (showMarkers) {
                         if (uiState.clients.isEmpty() && uiState.agents.isEmpty() && !uiState.isLoading) {
                             Timber.w("🗺️ MAP EMPTY: No clients found.")
                         } else {
-                            Timber.d("🗺️ RENDERING MARKERS - Clients: ${uiState.filteredClients.size}, Agents: ${uiState.agents.size}")
+                            Timber.d("🗺️ RENDERING MARKERS - Clients: ${visibleClientMarkers.size}, Agents: ${filteredAgentsForMap.size}")
                         }
 
-                        if (showClientMarkers) {
-                            uiState.filteredClients.forEachIndexed { index, client ->
-                                if (client.latitude != null && client.longitude != null) {
-                                    val visitStatus = client.getVisitStatusColor()
+                        visibleClientMarkers.forEach { client ->
+                            if (client.latitude != null && client.longitude != null) {
+                                val visitStatus = client.getVisitStatusColor()
+                                val position = LatLng(client.latitude, client.longitude)
 
-                                    if (filteredStatuses.contains(visitStatus)) {
-                                        val position = LatLng(client.latitude, client.longitude)
+                                val markerColor = when (visitStatus) {
+                                    VisitStatus.NEVER_VISITED -> BitmapDescriptorFactory.HUE_RED
+                                    VisitStatus.RECENT -> BitmapDescriptorFactory.HUE_GREEN
+                                    VisitStatus.MODERATE -> BitmapDescriptorFactory.HUE_YELLOW
+                                    VisitStatus.OVERDUE -> BitmapDescriptorFactory.HUE_ORANGE
+                                }
 
-                                        val markerColor = when (visitStatus) {
-                                            VisitStatus.NEVER_VISITED -> BitmapDescriptorFactory.HUE_RED
-                                            VisitStatus.RECENT -> BitmapDescriptorFactory.HUE_GREEN
-                                            VisitStatus.MODERATE -> BitmapDescriptorFactory.HUE_YELLOW
-                                            VisitStatus.OVERDUE -> BitmapDescriptorFactory.HUE_ORANGE
-                                        }
+                                val visitInfo = client.getFormattedLastVisit()?.let { "Last visit: $it" }
+                                    ?: "Never visited"
 
-                                        val visitInfo = client.getFormattedLastVisit()?.let { "Last visit: $it" }
-                                            ?: "Never visited"
-
-                                        val snippet = buildString {
-                                            append(visitInfo)
-                                            client.address?.let {
-                                                append(" • ")
-                                                append(it)
-                                            }
-                                        }
-
-                                        // ✅ FIXED: Stable marker rendering with internal key
-                                        androidx.compose.runtime.key(client.id) {
-                                            val markerState = rememberMarkerState(position = position)
-                                            markerState.position = position // ✅ Update position on recomposition
-                                            
-                                            Marker(
-                                                state = markerState,
-                                                title = client.name,
-                                                snippet = snippet,
-                                                icon = BitmapDescriptorFactory.defaultMarker(markerColor),
-                                                onClick = {
-                                                    viewModel.selectClient(client)
-                                                    true
-                                                }
-                                            )
-                                        }
+                                val snippet = buildString {
+                                    append(visitInfo)
+                                    client.address?.let {
+                                        append(" • ")
+                                        append(it)
                                     }
+                                }
+
+                                androidx.compose.runtime.key(client.id) {
+                                    val markerState = rememberMarkerState(position = position)
+                                    markerState.position = position
+
+                                    Marker(
+                                        state = markerState,
+                                        title = client.name,
+                                        snippet = snippet,
+                                        icon = BitmapDescriptorFactory.defaultMarker(markerColor),
+                                        onClick = {
+                                            viewModel.selectClient(client)
+                                            true
+                                        }
+                                    )
                                 }
                             }
                         }
 
                         // ✅ NEW: Render Agents (Admins only)
-                        if (uiState.isAdmin && uiState.agents.isNotEmpty()) {
-                            uiState.agents
-                                .filter { agent ->
-                                    // Apply Admin Filters
-                                    val isOnline = agent.latitude != null && agent.longitude != null
-                                    if (uiState.showOnlineAgentsOnly && !isOnline) return@filter false
-                                    
-                                    // Live Smart Filter (disabled unresolved fields)
-                                    when (uiState.agentFilter) {
-                                        "Idle" -> if (false) return@filter false
-                                        "Overdue" -> {
-                                            if (false) return@filter false
-                                        }
-                                    }
-                                    
-                                    true
-                                }
-                                .forEach { agent ->
+                        if (uiState.isAdmin && filteredAgentsForMap.isNotEmpty()) {
+                            filteredAgentsForMap.forEach { agent ->
                                 if (agent.latitude != null && agent.longitude != null) {
                                     val position = LatLng(agent.latitude, agent.longitude)
-                                    
-                                    // Blue marker for agents, dimmed if offline
-                                    val isOnlineNow = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(System.currentTimeMillis().toString())
-                                    val isInMeeting = false
-                                    
-                                    // ✅ FIX #3/6: Stable agent markers - Move state inside KEY
+                                    val isOnlineNow = DateTimeUtils.isRecent(agent.timestamp)
+                                    val isInMeeting = agent.currentActivity?.contains("meeting", ignoreCase = true) == true ||
+                                        agent.activity?.contains("meeting", ignoreCase = true) == true
+
                                     androidx.compose.runtime.key("agent-${agent.id}") {
                                         val markerState = rememberMarkerState(position = position)
-                                        markerState.position = position // ✅ Update position on recomposition
-                                        
+                                        markerState.position = position
+
                                         Marker(
                                             state = markerState,
-                                            title = "Agent",
+                                            title = agent.fullName ?: agent.email,
                                             snippet = when {
-                                                isInMeeting -> "Status: In Meeting"
-                                                isOnlineNow -> "Status: Active"
-                                                else -> "Status: Offline"
+                                                isInMeeting -> agent.currentActivity ?: "In client visit"
+                                                isOnlineNow -> agent.currentActivity ?: agent.smartStatus ?: "Active now"
+                                                else -> "Last seen ${DateTimeUtils.formatLastSeen(agent.timestamp)}"
                                             },
                                             icon = if (isOnlineNow) {
                                                 MapUtils.vectorToBitmap(context, R.drawable.ic_marker_live)
@@ -522,7 +527,7 @@ fun MapScreen(
                         // ✅ NEW: Pulsing Effect for Selected Agent (only if online)
                         uiState.selectedAgent?.let { agent ->
                             if (agent.latitude != null && agent.longitude != null) {
-                                val isOnlineForPulse = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(System.currentTimeMillis().toString())
+                                val isOnlineForPulse = DateTimeUtils.isRecent(agent.timestamp)
                                 if (isOnlineForPulse) {
                                     Circle(
                                         center = LatLng(agent.latitude, agent.longitude),
@@ -585,7 +590,7 @@ fun MapScreen(
                 }
 
                 // ✅ Search Result Indicator / Error Message
-                uiState.error?.let { error ->
+                if (false) uiState.error?.let { error ->
                     Box(
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -703,152 +708,135 @@ fun MapScreen(
                 }
 
 
-                // ✅ TOP UI CONTAINER (MANAGED STACK)
-                Column(
+                AnimatedVisibility(
+                    visible = uiState.isAdmin || uiState.isTrackingEnabled,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(16.dp)
-                        .zIndex(3.0f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .zIndex(3f),
+                    enter = fadeIn() + slideInVertically(),
+                    exit = fadeOut() + slideOutVertically()
                 ) {
-                    // 1. Floating Search Bar
-                    AnimatedVisibility(
-                        visible = (uiState.isAdmin || uiState.isTrackingEnabled),
-                        enter = fadeIn() + slideInVertically(),
-                        exit = fadeOut() + slideOutVertically()
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            ui.components.textfield.TextField(
-                                value = uiState.searchQuery,
-                                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                                placeholder = { Text("Search clients by name, address, or pincode...") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(AppTheme.colors.surface),
-                                leadingIcon = {
-                                    if (uiState.isSearchingRemote) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            strokeWidth = 2.dp,
-                                            color = AppTheme.colors.primary
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Search,
-                                            contentDescription = "Search",
-                                            tint = AppTheme.colors.textSecondary
-                                        )
-                                    }
-                                },
-                                trailingIcon = {
-                                    if (uiState.searchQuery.isNotEmpty()) {
-                                        IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                    TerritoryControlPanel(
+                        uiState = uiState,
+                        plottedClientCount = visibleClientMarkers.size,
+                        mappedClientCount = uiState.filteredClients.size,
+                        liveAgentCount = liveAgentCount,
+                        overdueClientCount = clientCounts[VisitStatus.OVERDUE] ?: 0,
+                        hiddenClientsCount = uiState.hiddenClientsCount,
+                        clientsVisible = if (uiState.isAdmin) uiState.showClients else canShowClientMarkers,
+                        onToggleAgentRoster = { viewModel.toggleAgentRoster() },
+                        onToggleOnlineAgentsOnly = { viewModel.toggleOnlineAgentsFilter() },
+                        onToggleHighAccuracyOnly = { viewModel.toggleHighAccuracyFilter() },
+                        onSelectAgentFilter = { viewModel.setAgentFilter(it) },
+                        searchSection = {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                ui.components.textfield.TextField(
+                                    value = uiState.searchQuery,
+                                    onValueChange = { viewModel.onSearchQueryChanged(it) },
+                                    placeholder = { Text("Search clients by name, address, or pincode...") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(AppTheme.colors.surface),
+                                    leadingIcon = {
+                                        if (uiState.isSearchingRemote) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp,
+                                                color = AppTheme.colors.primary
+                                            )
+                                        } else {
                                             Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Clear search",
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = "Search",
                                                 tint = AppTheme.colors.textSecondary
                                             )
                                         }
+                                    },
+                                    trailingIcon = {
+                                        if (uiState.searchQuery.isNotEmpty()) {
+                                            IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Clear search",
+                                                    tint = AppTheme.colors.textSecondary
+                                                )
+                                            }
+                                        }
                                     }
-                                }
-                            )
-                            
-                            // ✅ Client Search Dropdown Results
-                            AnimatedVisibility(
-                                visible = uiState.searchQuery.isNotEmpty() && uiState.filteredClients.isNotEmpty()
-                            ) {
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(AppTheme.colors.surface)
-                                        .border(1.dp, AppTheme.colors.outline, RoundedCornerShape(12.dp))
-                                        .heightIn(max = 280.dp)
+                                )
+
+                                AnimatedVisibility(
+                                    visible = uiState.searchQuery.isNotEmpty() && uiState.filteredClients.isNotEmpty()
                                 ) {
-                                    val displayCount = 5
-                                    itemsIndexed(uiState.filteredClients.take(displayCount)) { index, client ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    viewModel.selectClient(client)
-                                                    coroutineScope.launch {
-                                                        cameraPositionState.animate(
-                                                            update = CameraUpdateFactory.newLatLngZoom(
-                                                                LatLng(client.latitude ?: 0.0, client.longitude ?: 0.0),
-                                                                16f
-                                                            ),
-                                                            durationMs = 800
-                                                        )
+                                    LazyColumn(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 8.dp)
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(AppTheme.colors.surface)
+                                            .border(1.dp, AppTheme.colors.outline.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                                            .heightIn(max = 280.dp)
+                                    ) {
+                                        val displayCount = 5
+                                        items(uiState.filteredClients.take(displayCount)) { client ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        viewModel.selectClient(client)
+                                                        coroutineScope.launch {
+                                                            cameraPositionState.animate(
+                                                                update = CameraUpdateFactory.newLatLngZoom(
+                                                                    LatLng(client.latitude ?: 0.0, client.longitude ?: 0.0),
+                                                                    16f
+                                                                ),
+                                                                durationMs = 800
+                                                            )
+                                                        }
+                                                        viewModel.onSearchQueryChanged("")
                                                     }
-                                                    viewModel.onSearchQueryChanged("") 
+                                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(36.dp)
+                                                        .clip(CircleShape)
+                                                        .background(AppTheme.colors.primary.copy(alpha = 0.12f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.LocationOn,
+                                                        contentDescription = null,
+                                                        tint = AppTheme.colors.primary,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
                                                 }
-                                                .padding(16.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.LocationOn, 
-                                                contentDescription = null, 
-                                                tint = AppTheme.colors.primary, 
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(text = client.name, style = AppTheme.typography.body1, fontWeight = FontWeight.Bold, color = AppTheme.colors.text)
-                                                Text(text = client.address ?: "No address", style = AppTheme.typography.body3, color = AppTheme.colors.textSecondary)
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = client.name,
+                                                        style = AppTheme.typography.body1,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = AppTheme.colors.text
+                                                    )
+                                                    Text(
+                                                        text = client.address ?: "No address",
+                                                        style = AppTheme.typography.body3,
+                                                        color = AppTheme.colors.textSecondary,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-
-                // ✅ PHASE 3: ADMIN ACTION HUB (Right Side)
-                if (uiState.isAdmin) {
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 16.dp)
-                            .zIndex(4f),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        androidx.compose.material3.FloatingActionButton(
-                            onClick = { viewModel.toggleAgentRoster() },
-                            containerColor = AppTheme.colors.surface,
-                            contentColor = AppTheme.colors.primary,
-                            shape = CircleShape,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Default.People, "Agent Roster")
-                        }
-
-                        androidx.compose.material3.FloatingActionButton(
-                            onClick = { viewModel.toggleClientVisibility() },
-                            containerColor = if (uiState.showClients) AppTheme.colors.primary else AppTheme.colors.surface,
-                            contentColor = if (uiState.showClients) Color.White else AppTheme.colors.primary,
-                            shape = CircleShape,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(if (uiState.showClients) Icons.Default.Visibility else Icons.Default.VisibilityOff, "Toggle Clients")
-                        }
-                    }
-
-                    // ✅ Admin Filter Chips Row
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 90.dp) 
-                            .zIndex(4f),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AdminFilterChip("All", uiState.agentFilter == "All") { viewModel.setAgentFilter("All") }
-                        AdminFilterChip("Idle", uiState.agentFilter == "Idle") { viewModel.setAgentFilter("Idle") }
-                        AdminFilterChip("Overdue", uiState.agentFilter == "Overdue") { viewModel.setAgentFilter("Overdue") }
-                    }
+                    )
                 }
 
                 // Agent Roster Bottom Sheet
@@ -870,9 +858,44 @@ fun MapScreen(
                     )
                 }
 
+                AnimatedVisibility(
+                    visible = (uiState.isTrackingEnabled || uiState.isAdmin) &&
+                        uiState.selectedClient == null &&
+                        uiState.selectedAgent == null &&
+                        !showMeetingSheet,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 16.dp, bottom = if (uiState.isAdmin) 24.dp else 92.dp)
+                        .zIndex(2f),
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    EnhancedMapLegend(
+                        isExpanded = isLegendExpanded,
+                        onToggle = { isLegendExpanded = !isLegendExpanded },
+                        clientCounts = clientCounts,
+                        filteredStatuses = filteredStatuses,
+                        onFilterChange = { status ->
+                            filteredStatuses = if (filteredStatuses.contains(status) && filteredStatuses.size > 1) {
+                                filteredStatuses - status
+                            } else {
+                                filteredStatuses + status
+                            }
+                        },
+                        onResetFilters = { filteredStatuses = VisitStatus.values().toSet() },
+                        agentCount = if (uiState.isAdmin) liveAgentCount else null,
+                        visibleClientCount = visibleClientMarkers.size,
+                        clientsVisible = if (uiState.isAdmin) uiState.showClients else canShowClientMarkers,
+                        onToggleClientsVisibility = if (uiState.isAdmin) {
+                            { viewModel.toggleClientVisibility() }
+                        } else {
+                            null
+                        }
+                    )
+                }
 
                 // 2. Status Indicator Row (Clocked-In / Online Now)
-                Box(
+                if (false) Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(bottom = 120.dp, start = 16.dp)
@@ -1078,7 +1101,7 @@ fun MapScreen(
 
                 // Territory/Info Banner
                 AnimatedVisibility(
-                    visible = uiState.territoryMessage != null,
+                    visible = false && uiState.territoryMessage != null,
                     modifier = Modifier.align(Alignment.TopCenter),
                     enter = slideInVertically() + fadeIn(),
                     exit = slideOutVertically() + fadeOut()
@@ -1111,7 +1134,7 @@ fun MapScreen(
 
                 // ✅ NEW: Hidden Clients Banner (Coordinate missing)
                 AnimatedVisibility(
-                    visible = uiState.hiddenClientsCount > 0 && !uiState.isLoading && uiState.selectedClient == null && uiState.selectedAgent == null && !showMeetingSheet,
+                    visible = false && uiState.hiddenClientsCount > 0 && !uiState.isLoading && uiState.selectedClient == null && uiState.selectedAgent == null && !showMeetingSheet,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 100.dp)
@@ -1147,7 +1170,7 @@ fun MapScreen(
 
                 // Error Banner
                 AnimatedVisibility(
-                    visible = uiState.error != null,
+                    visible = false && uiState.error != null,
                     modifier = Modifier.align(Alignment.TopCenter),
                     enter = slideInVertically() + fadeIn(),
                     exit = slideOutVertically() + fadeOut()
@@ -1180,7 +1203,7 @@ fun MapScreen(
 
                 // Loading Card
                 AnimatedVisibility(
-                    visible = uiState.isLoading,
+                    visible = uiState.isLoading && uiState.isTrackingEnabled,
                     modifier = Modifier.align(Alignment.Center),
                     enter = scaleIn() + fadeIn(),
                     exit = scaleOut() + fadeOut()
@@ -1234,23 +1257,6 @@ fun MapScreen(
                 ) {
                     AnimatedPermissionPrompt(
                         onGrant = { locationPermissions.launchMultiplePermissionRequest() }
-                    )
-                }
-
-                // Full-screen Tracking Warning (Non-admins only)
-                if (!uiState.isTrackingEnabled && !uiState.isAdmin) {
-                    TrackingRequiredOverlay(
-                        modifier = Modifier.fillMaxSize(),
-                        onEnableTracking = {
-                            if (!isLocationEnabled) {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                                )
-                            } else {
-                                viewModel.startClockIn()
-                            }
-                        },
-                        onRefreshStatus = { viewModel.refreshTrackingState() }
                     )
                 }
 
@@ -1413,131 +1419,6 @@ fun MapScreen(
     }
 }
 
-@Composable
-fun TrackingRequiredOverlay(
-    modifier: Modifier = Modifier,
-    onEnableTracking: () -> Unit,
-    onRefreshStatus: () -> Unit
-) {
-    Box(
-        modifier = modifier.background(Color.Black),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(top = 120.dp, start = 24.dp, end = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = Icons.Default.LocationOff,
-                contentDescription = null,
-                modifier = Modifier.size(52.dp),
-                tint = Color(0xFF5E92F3)
-            )
-
-            Text(
-                text = "Location tracking required",
-                style = AppTheme.typography.h3,
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
-
-            // Shortened description
-            Text(
-                text = "Background location access is required to show nearby clients and verify your working area.",
-                style = AppTheme.typography.body2,
-                color = Color.White.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center
-            )
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.Start,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                TrackingBenefitItem("Verify you are in the correct service area")
-                TrackingBenefitItem("Show clients near your location")
-                TrackingBenefitItem("Securely log field visits")
-                TrackingBenefitItem("Prevent unauthorized access")
-            }
-
-            Button(
-                onClick = onEnableTracking,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF10B981), // Emerald for Clock In
-                    contentColor = Color.White
-                )
-            ) {
-                Text(
-                    text = "Clock In / Start Work",
-                    style = AppTheme.typography.button
-                )
-            }
-
-            OutlinedButton(
-                onClick = onRefreshStatus,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.White
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    Color.White.copy(alpha = 0.35f)
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Refresh tracking status",
-                    style = AppTheme.typography.button,
-                    color = Color.White
-                )
-            }
-
-
-            // Shortened footer
-            Text(
-                text = "Your location is used only to verify visits and is never shared.",
-                style = AppTheme.typography.body2,
-                color = Color.White.copy(alpha = 0.5f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun TrackingBenefitItem(text: String) {
-    Row(
-        verticalAlignment = Alignment.Top,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            text = "•",
-            style = AppTheme.typography.body1,
-            color = Color.White.copy(alpha = 0.85f),
-            modifier = Modifier.padding(end = 8.dp)
-        )
-
-        Text(
-            text = text,
-            style = AppTheme.typography.body2,
-            color = Color.White.copy(alpha = 0.75f)
-        )
-    }
-}
 
 
     @Composable
@@ -2299,6 +2180,345 @@ fun AnimatedPermissionPrompt(
 
 
 @Composable
+private fun TerritoryControlPanel(
+    uiState: MapUiState,
+    plottedClientCount: Int,
+    mappedClientCount: Int,
+    liveAgentCount: Int,
+    overdueClientCount: Int,
+    hiddenClientsCount: Int,
+    clientsVisible: Boolean,
+    onToggleAgentRoster: () -> Unit,
+    onToggleOnlineAgentsOnly: () -> Unit,
+    onToggleHighAccuracyOnly: () -> Unit,
+    onSelectAgentFilter: (String) -> Unit,
+    searchSection: @Composable () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = Color(0xFF08111D).copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        shadowElevation = 14.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF0F172A).copy(alpha = 0.98f),
+                            Color(0xFF08111D).copy(alpha = 0.94f)
+                        )
+                    )
+                )
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(AppTheme.colors.primary.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.isAdmin) Icons.Default.Map else Icons.Default.MyLocation,
+                            contentDescription = null,
+                            tint = AppTheme.colors.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = if (uiState.isAdmin) "Territory Command Center" else "Territory Focus",
+                            style = AppTheme.typography.body1,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (uiState.isAdmin) {
+                                "Live team visibility, client coverage, and map filters."
+                            } else {
+                                "Find nearby clients quickly and keep territory tracking clean."
+                            },
+                            style = AppTheme.typography.body3,
+                            color = Color.White.copy(alpha = 0.62f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(
+                            if (uiState.isTrackingEnabled || uiState.isAdmin) Color(0xFF0F766E).copy(alpha = 0.18f)
+                            else Color(0xFF7F1D1D).copy(alpha = 0.18f)
+                        )
+                        .border(
+                            1.dp,
+                            if (uiState.isTrackingEnabled || uiState.isAdmin) Color(0xFF2DD4BF).copy(alpha = 0.4f)
+                            else Color(0xFFF87171).copy(alpha = 0.4f),
+                            RoundedCornerShape(999.dp)
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (uiState.isTrackingEnabled || uiState.isAdmin) Color(0xFF2DD4BF)
+                                    else Color(0xFFF87171)
+                                )
+                        )
+                        Text(
+                            text = if (uiState.isTrackingEnabled || uiState.isAdmin) "Map live" else "Tracking off",
+                            style = AppTheme.typography.label2,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                TerritoryMetricCard(
+                    modifier = Modifier.weight(1f),
+                    label = if (uiState.isAdmin) "Plotted" else "In View",
+                    value = plottedClientCount.toString(),
+                    icon = if (clientsVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    accent = Color(0xFF38BDF8)
+                )
+                TerritoryMetricCard(
+                    modifier = Modifier.weight(1f),
+                    label = "Mapped",
+                    value = mappedClientCount.toString(),
+                    icon = Icons.Default.Place,
+                    accent = Color(0xFF34D399)
+                )
+                TerritoryMetricCard(
+                    modifier = Modifier.weight(1f),
+                    label = if (uiState.isAdmin) "Live Agents" else "Overdue",
+                    value = if (uiState.isAdmin) liveAgentCount.toString() else overdueClientCount.toString(),
+                    icon = if (uiState.isAdmin) Icons.Default.People else Icons.Default.Schedule,
+                    accent = if (uiState.isAdmin) Color(0xFFF59E0B) else Color(0xFFFF7A59)
+                )
+            }
+
+            searchSection()
+
+            if (uiState.isAdmin) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TerritoryActionChip(
+                        modifier = Modifier.weight(1f),
+                        label = "Roster",
+                        icon = Icons.Default.People,
+                        isSelected = uiState.showAgentRoster,
+                        onClick = onToggleAgentRoster
+                    )
+                    TerritoryActionChip(
+                        modifier = Modifier.weight(1f),
+                        label = "Live only",
+                        icon = Icons.Default.Bolt,
+                        isSelected = uiState.showOnlineAgentsOnly,
+                        onClick = onToggleOnlineAgentsOnly
+                    )
+                    TerritoryActionChip(
+                        modifier = Modifier.weight(1f),
+                        label = "Precise GPS",
+                        icon = Icons.Default.GpsFixed,
+                        isSelected = uiState.showHighAccuracyOnly,
+                        onClick = onToggleHighAccuracyOnly
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AdminFilterChip("All", uiState.agentFilter == "All") { onSelectAgentFilter("All") }
+                    AdminFilterChip("Idle", uiState.agentFilter == "Idle") { onSelectAgentFilter("Idle") }
+                    AdminFilterChip("Near Overdue", uiState.agentFilter == "Overdue") { onSelectAgentFilter("Overdue") }
+                }
+            }
+
+            if (hiddenClientsCount > 0) {
+                TerritoryInlineBanner(
+                    message = "$hiddenClientsCount clients are still missing GPS and won't appear on the map yet.",
+                    accent = Color(0xFFF59E0B),
+                    icon = Icons.Default.LocationOff
+                )
+            }
+
+            if (uiState.isAdmin && !clientsVisible) {
+                TerritoryInlineBanner(
+                    message = if (uiState.searchQuery.isNotBlank()) {
+                        "Clients are hidden. Search still finds them, but markers stay off until you enable the client layer."
+                    } else {
+                        "Client markers are currently hidden. Use the legend card to show them again."
+                    },
+                    accent = Color(0xFF38BDF8),
+                    icon = Icons.Default.VisibilityOff
+                )
+            }
+
+            uiState.territoryMessage?.let { message ->
+                TerritoryInlineBanner(
+                    message = message,
+                    accent = Color(0xFF60A5FA),
+                    icon = Icons.Default.Info
+                )
+            }
+
+            uiState.error?.let { message ->
+                val bannerConfig = resolveBannerTone(message)
+                TerritoryInlineBanner(
+                    message = message,
+                    accent = bannerConfig.first,
+                    icon = bannerConfig.second
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerritoryMetricCard(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accent: Color
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(accent.copy(alpha = 0.12f))
+            .border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accent.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+        Text(
+            text = value,
+            style = AppTheme.typography.body1,
+            color = Color.White,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Text(
+            text = label,
+            style = AppTheme.typography.label2,
+            color = Color.White.copy(alpha = 0.58f),
+            fontSize = 10.sp
+        )
+    }
+}
+
+@Composable
+private fun TerritoryActionChip(
+    modifier: Modifier = Modifier,
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = if (isSelected) AppTheme.colors.primary.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.04f),
+        border = BorderStroke(
+            1.dp,
+            if (isSelected) AppTheme.colors.primary.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.08f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (isSelected) AppTheme.colors.primary else Color.White.copy(alpha = 0.72f),
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                style = AppTheme.typography.label2,
+                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.72f),
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun TerritoryInlineBanner(
+    message: String,
+    accent: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(accent.copy(alpha = 0.12f))
+            .border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = message,
+            style = AppTheme.typography.body3,
+            color = Color.White.copy(alpha = 0.88f),
+            fontSize = 11.sp
+        )
+    }
+}
+
+@Composable
 fun EnhancedMapLegend(
     modifier: Modifier = Modifier,
     isExpanded: Boolean,
@@ -2306,17 +2526,21 @@ fun EnhancedMapLegend(
     clientCounts: Map<VisitStatus, Int>,
     filteredStatuses: Set<VisitStatus>,
     onFilterChange: (VisitStatus) -> Unit,
-    agentCount: Int? = null // ✅ ADDED
+    agentCount: Int? = null,
+    visibleClientCount: Int = clientCounts.values.sum(),
+    clientsVisible: Boolean = true,
+    onToggleClientsVisibility: (() -> Unit)? = null,
+    onResetFilters: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier
-            .width(200.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(AppTheme.colors.surface.copy(alpha = 0.98f))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .width(260.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color(0xFF08111D).copy(alpha = 0.94f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2325,46 +2549,91 @@ fun EnhancedMapLegend(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = AppTheme.colors.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "Legend",
-                    style = AppTheme.typography.label1,
-                    color = AppTheme.colors.text,
-                    fontWeight = FontWeight.Bold
-                )
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White.copy(alpha = 0.06f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Map,
+                        contentDescription = null,
+                        tint = AppTheme.colors.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Legend & Layers",
+                        style = AppTheme.typography.label1,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (clientsVisible) "$visibleClientCount client pins plotted" else "Client layer hidden",
+                        style = AppTheme.typography.body3,
+                        color = Color.White.copy(alpha = 0.58f),
+                        fontSize = 11.sp
+                    )
+                }
             }
             Icon(
                 imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
-                tint = AppTheme.colors.textSecondary,
+                tint = Color.White.copy(alpha = 0.72f),
                 modifier = Modifier.size(20.dp)
             )
         }
 
-        // Total count badge
         if (!isExpanded) {
-            val total = clientCounts.values.sum()
-            val text = if (agentCount != null) "$total clients • $agentCount agents" else "$total clients"
             Text(
-                text = text,
-                style = AppTheme.typography.body2,
-                color = AppTheme.colors.textSecondary,
+                text = buildString {
+                    append("${filteredStatuses.size}/4 filters active")
+                    if (agentCount != null) append(" • $agentCount live agents")
+                },
+                style = AppTheme.typography.body3,
+                color = Color.White.copy(alpha = 0.58f),
                 fontSize = 11.sp
             )
         }
 
-        // Expanded content
         AnimatedVisibility(visible = isExpanded) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Spacer(modifier = Modifier.height(2.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    onToggleClientsVisibility?.let {
+                        TerritoryActionChip(
+                            modifier = Modifier.weight(1f),
+                            label = if (clientsVisible) "Hide clients" else "Show clients",
+                            icon = if (clientsVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            isSelected = clientsVisible,
+                            onClick = it
+                        )
+                    }
+                    onResetFilters?.let {
+                        TerritoryActionChip(
+                            modifier = Modifier.weight(1f),
+                            label = "Reset filters",
+                            icon = Icons.Default.FilterAltOff,
+                            isSelected = false,
+                            onClick = it
+                        )
+                    }
+                }
+
+                if (!clientsVisible) {
+                    TerritoryInlineBanner(
+                        message = "Client pins are hidden. Turn the layer back on to plot search results and territory coverage.",
+                        accent = Color(0xFF38BDF8),
+                        icon = Icons.Default.VisibilityOff
+                    )
+                }
 
                 EnhancedLegendItem(
                     color = Color(0xFFEA4335),
@@ -2373,7 +2642,6 @@ fun EnhancedMapLegend(
                     isEnabled = filteredStatuses.contains(VisitStatus.NEVER_VISITED),
                     onClick = { onFilterChange(VisitStatus.NEVER_VISITED) }
                 )
-
                 EnhancedLegendItem(
                     color = Color(0xFF34A853),
                     label = "Recent visit",
@@ -2381,7 +2649,6 @@ fun EnhancedMapLegend(
                     isEnabled = filteredStatuses.contains(VisitStatus.RECENT),
                     onClick = { onFilterChange(VisitStatus.RECENT) }
                 )
-
                 EnhancedLegendItem(
                     color = Color(0xFFFBBC04),
                     label = "Follow-up soon",
@@ -2389,7 +2656,6 @@ fun EnhancedMapLegend(
                     isEnabled = filteredStatuses.contains(VisitStatus.MODERATE),
                     onClick = { onFilterChange(VisitStatus.MODERATE) }
                 )
-
                 EnhancedLegendItem(
                     color = Color(0xFFFF6D00),
                     label = "Overdue",
@@ -2400,63 +2666,20 @@ fun EnhancedMapLegend(
 
                 if (agentCount != null) {
                     EnhancedLegendItem(
-                        color = Color(0xFF00BCD4), // Cyan
-                        label = "Live Status",
+                        color = Color(0xFF38BDF8),
+                        label = "Live agents",
                         count = agentCount,
                         isEnabled = true,
-                        onClick = { /* No filter for agents yet */ }
+                        onClick = { }
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                androidx.compose.material3.HorizontalDivider(color = AppTheme.colors.onSurface.copy(alpha = 0.1f))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                 Text(
-                    text = "Activity Markers",
-                    style = AppTheme.typography.label2,
-                    color = AppTheme.colors.textSecondary,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-
-                EnhancedLegendItem(
-                    color = Color(0xFF4CAF50),
-                    label = "Journey Start / Arrived",
-                    count = 0,
-                    isEnabled = true,
-                    onClick = { },
-                    showCount = false
-                )
-                EnhancedLegendItem(
-                    color = Color(0xFFE53935),
-                    label = "Journey End / Stop",
-                    count = 0,
-                    isEnabled = true,
-                    onClick = { },
-                    showCount = false
-                )
-                EnhancedLegendItem(
-                    color = Color(0xFF03A9F4),
-                    label = "Meeting Start",
-                    count = 0,
-                    isEnabled = true,
-                    onClick = { },
-                    showCount = false
-                )
-                EnhancedLegendItem(
-                    color = Color(0xFF1565C0),
-                    label = "Meeting End",
-                    count = 0,
-                    isEnabled = true,
-                    onClick = { },
-                    showCount = false
-                )
-                EnhancedLegendItem(
-                    color = Color(0xFF7C4DFF),
-                    label = "Clocked In / Person",
-                    count = 0,
-                    isEnabled = true,
-                    onClick = { },
-                    showCount = false
+                    text = "Tip: tap any color to narrow the map. Journey markers appear only after you select an agent.",
+                    style = AppTheme.typography.body3,
+                    color = Color.White.copy(alpha = 0.56f),
+                    fontSize = 11.sp
                 )
             }
         }
@@ -2526,6 +2749,91 @@ fun EnhancedLegendItem(
                 )
             }
         }
+    }
+}
+
+private fun resolveBannerTone(message: String): Pair<Color, androidx.compose.ui.graphics.vector.ImageVector> {
+    val lowerMessage = message.lowercase()
+    return when {
+        "success" in lowerMessage || "tagged" in lowerMessage || "updated" in lowerMessage ->
+            Color(0xFF34D399) to Icons.Default.CheckCircle
+        "detecting" in lowerMessage || "wait" in lowerMessage || "no clients found" in lowerMessage ->
+            Color(0xFF60A5FA) to Icons.Default.Info
+        else -> Color(0xFFF87171) to Icons.Default.Warning
+    }
+}
+
+private fun calculateVisitStatusCounts(clients: List<Client>): Map<VisitStatus, Int> {
+    val counts = VisitStatus.values().associateWith { 0 }.toMutableMap()
+    clients.forEach { client ->
+        val status = client.getVisitStatusColor()
+        counts[status] = (counts[status] ?: 0) + 1
+    }
+    return counts
+}
+
+private fun calculateNearbyOverdueCounts(
+    agents: List<AgentLocation>,
+    clients: List<Client>,
+    radiusMeters: Double = 1200.0
+): Map<String, Int> {
+    val overdueClients = clients.filter { client ->
+        client.latitude != null &&
+            client.longitude != null &&
+            client.getVisitStatusColor() == VisitStatus.OVERDUE
+    }
+
+    return agents.associate { agent ->
+        val nearbyCount = if (agent.latitude == null || agent.longitude == null) {
+            0
+        } else {
+            overdueClients.count { client ->
+                calculateDistance(
+                    agent.latitude,
+                    agent.longitude,
+                    client.latitude ?: return@count false,
+                    client.longitude ?: return@count false
+                ) <= radiusMeters
+            }
+        }
+        agent.id to nearbyCount
+    }
+}
+
+private fun filterAgentsForMap(
+    agents: List<AgentLocation>,
+    agentFilter: String,
+    nearbyOverdueCounts: Map<String, Int>,
+    showOnlineAgentsOnly: Boolean,
+    showHighAccuracyOnly: Boolean
+): List<AgentLocation> {
+    return agents.filter { agent ->
+        if (agent.latitude == null || agent.longitude == null) return@filter false
+
+        val isOnline = DateTimeUtils.isRecent(agent.timestamp)
+        if (showOnlineAgentsOnly && !isOnline) return@filter false
+        if (showHighAccuracyOnly && (agent.accuracy ?: Double.MAX_VALUE) > 80.0) return@filter false
+
+        when (agentFilter) {
+            "Idle" -> isIdleAgent(agent, isOnline)
+            "Overdue" -> (nearbyOverdueCounts[agent.id] ?: 0) > 0
+            else -> true
+        }
+    }
+}
+
+private fun isIdleAgent(agent: AgentLocation, isOnline: Boolean): Boolean {
+    val statusText = listOfNotNull(agent.smartStatus, agent.currentActivity, agent.activity)
+        .joinToString(" ")
+        .lowercase()
+
+    return when {
+        statusText.contains("meeting") -> false
+        statusText.contains("idle") ||
+            statusText.contains("inactive") ||
+            statusText.contains("waiting") ||
+            statusText.contains("stopped") -> true
+        else -> !isOnline
     }
 }
 
@@ -2608,7 +2916,14 @@ fun AdminFilterChip(
             selectedContainerColor = AppTheme.colors.primary,
             containerColor = AppTheme.colors.surface.copy(alpha = 0.9f)
         ),
-        border = if (isSelected) null else BorderStroke(1.dp, AppTheme.colors.outline.copy(alpha = 0.2f)),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = isSelected,
+            borderColor = AppTheme.colors.outline.copy(alpha = 0.2f),
+            selectedBorderColor = Color.Transparent,
+            borderWidth = 1.dp,
+            selectedBorderWidth = 0.dp
+        ),
         shape = RoundedCornerShape(20.dp)
     )
 }

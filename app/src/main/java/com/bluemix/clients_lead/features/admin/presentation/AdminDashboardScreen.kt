@@ -2,6 +2,7 @@ package com.bluemix.clients_lead.features.admin.presentation
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bluemix.clients_lead.domain.repository.AgentLocation
 import com.bluemix.clients_lead.features.admin.vm.AdminDashboardViewModel
+import com.bluemix.clients_lead.domain.repository.VisibilityFilter
 import org.koin.androidx.compose.koinViewModel
 import ui.AppTheme
 import ui.components.Scaffold
@@ -216,8 +218,49 @@ fun AdminDashboardScreen(
                         CircularProgressIndicator(color = Color(0xFF3B82F6), strokeWidth = 3.dp)
                     }
                 } else {
+                    // Visibility Filters
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        VisibilityFilter.values().forEach { filter ->
+                            val isSelected = uiState.visibilityFilter == filter
+                            val color = when(filter) {
+                                VisibilityFilter.ALL -> Color(0xFF6366F1)
+                                VisibilityFilter.SEEN_TODAY -> Color(0xFF10B981)
+                                VisibilityFilter.UNSEEN_TODAY -> Color(0xFFEF4444)
+                            }
+
+                            Surface(
+                                onClick = { viewModel.onVisibilityFilterChanged(filter) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) color.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f),
+                                border = BorderStroke(1.dp, if (isSelected) color else Color.White.copy(alpha = 0.1f))
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = when(filter) {
+                                            VisibilityFilter.ALL -> "All"
+                                            VisibilityFilter.SEEN_TODAY -> "Seen"
+                                            VisibilityFilter.UNSEEN_TODAY -> "Unseen"
+                                        },
+                                        color = if (isSelected) color else Color.White.copy(alpha = 0.6f),
+                                        style = AppTheme.typography.label2,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        uiState.agents.forEach { agent ->
+                        uiState.filteredAgents.forEach { agent ->
                             AgentActivityRow(
                                 agent = agent,
                                 onClick = { onNavigateToAgentDetail(agent.id) }

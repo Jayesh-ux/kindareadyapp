@@ -5,12 +5,8 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 
 object DateTimeUtils {
-    /**
-     * Parse ISO 8601 timestamp with fallback for milliseconds
-     */
     fun parseDate(timestamp: String?): Date? {
         if (timestamp.isNullOrBlank()) return null
-        
         val formats = listOf(
             "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
             "yyyy-MM-dd'T'HH:mm:ss.SSS",
@@ -18,7 +14,6 @@ object DateTimeUtils {
             "yyyy-MM-dd'T'HH:mm:ss",
             "yyyy-MM-dd HH:mm:ss"
         )
-
         for (pattern in formats) {
             try {
                 val format = SimpleDateFormat(pattern, Locale.US)
@@ -34,58 +29,52 @@ object DateTimeUtils {
         return null
     }
 
-    /**
-     * Checks if a timestamp is within the last 5 minutes (for Online status)
-     */
     fun isRecent(timestamp: String?): Boolean {
         val date = parseDate(timestamp) ?: return false
         val now = System.currentTimeMillis()
         val diff = Math.abs(now - date.time)
-        return diff < TimeUnit.MINUTES.toMillis(10) // Increased from 5 to 10 for better stability
+        return diff < TimeUnit.MINUTES.toMillis(10)
     }
 
-    /**
-     * Returns a human readable "Last seen" string
-     */
+    fun isToday(timestamp: String?): Boolean {
+        if (timestamp == null) return false
+        val date = parseDate(timestamp) ?: return false
+        val cal1 = Calendar.getInstance()
+        val cal2 = Calendar.getInstance()
+        cal1.time = date
+        cal2.time = Date()
+        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+               cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+    }
+
     fun formatLastSeen(timestamp: String?): String {
         val date = parseDate(timestamp) ?: return "Never"
         val now = System.currentTimeMillis()
         val diff = now - date.time
-        
         val absDiff = Math.abs(diff)
-        
-        if (diff < -TimeUnit.MINUTES.toMillis(1)) return "Just now"
-
+        if (diff < -60000) return "Just now"
         return when {
-            absDiff < TimeUnit.MINUTES.toMillis(1) -> "Just now"
-            absDiff < TimeUnit.HOURS.toMillis(1) -> "${TimeUnit.MILLISECONDS.toMinutes(absDiff)}m ago"
-            absDiff < TimeUnit.DAYS.toMillis(1) -> "${TimeUnit.MILLISECONDS.toHours(absDiff)}h ago"
-            absDiff < TimeUnit.DAYS.toMillis(7) -> "${TimeUnit.MILLISECONDS.toDays(absDiff)}d ago"
+            absDiff < 60000 -> "Just now"
+            absDiff < 3600000 -> "${absDiff / 60000}m ago"
+            absDiff < 86400000 -> "${absDiff / 3600000}h ago"
+            absDiff < 604800000 -> "${absDiff / 86400000}d ago"
             else -> SimpleDateFormat("dd MMM", Locale.getDefault()).format(date)
         }
     }
 
-    /**
-     * Format timestamp to readable time string
-     */
     fun formatTime(timestamp: String?): String {
         val date = parseDate(timestamp) ?: return ""
         return try {
-            val outputFormat = SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault())
-            outputFormat.format(date)
+            SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault()).format(date)
         } catch (e: Exception) {
             timestamp ?: ""
         }
     }
 
-    /**
-     * Format timestamp to readable time string (HH:mm AM/PM)
-     */
     fun formatTimeOnly(timestamp: String?): String {
         val date = parseDate(timestamp) ?: return ""
         return try {
-            val outputFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
-            outputFormat.format(date)
+            SimpleDateFormat("hh:mm a", Locale.getDefault()).format(date)
         } catch (e: Exception) {
             timestamp ?: ""
         }

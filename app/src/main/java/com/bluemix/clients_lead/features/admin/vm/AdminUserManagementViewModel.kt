@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluemix.clients_lead.core.common.utils.AppResult
 import com.bluemix.clients_lead.domain.repository.AgentLocation
+import com.bluemix.clients_lead.domain.repository.VisibilityFilter
 import com.bluemix.clients_lead.domain.usecases.GetTeamLocations
 import com.bluemix.clients_lead.domain.usecases.UpdateUserStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +19,9 @@ data class AdminUserManagementUiState(
     val agents: List<AgentLocation> = emptyList(),
     val error: String? = null,
     val searchResults: List<AgentLocation> = emptyList(),
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val visibilityFilter: VisibilityFilter = VisibilityFilter.ALL,
+    val lastUpdated: Long = System.currentTimeMillis()
 )
 
 class AdminUserManagementViewModel(
@@ -46,7 +49,7 @@ class AdminUserManagementViewModel(
                         )
                     }
                     if (_uiState.value.searchQuery.isNotEmpty()) {
-                        performSearch(_uiState.value.searchQuery)
+                        applyFilters()
                     }
                 }
                 is AppResult.Error -> {
@@ -58,20 +61,36 @@ class AdminUserManagementViewModel(
 
     fun onSearchQueryChanged(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
-        performSearch(query)
+        applyFilters()
     }
 
-    private fun performSearch(query: String) {
-        if (query.isEmpty()) {
-            _uiState.update { it.copy(searchResults = it.agents) }
-            return
+    fun onVisibilityFilterChanged(filter: VisibilityFilter) {
+        _uiState.update { it.copy(visibilityFilter = filter) }
+        applyFilters()
+    }
+
+    private fun applyFilters() {
+        val query = _uiState.value.searchQuery
+        val visibility = _uiState.value.visibilityFilter
+        val allAgents = _uiState.value.agents
+
+        val filtered = allAgents.filter { agent ->
+            // Search Match
+            val matchesSearch = query.isEmpty() || 
+                agent.fullName?.contains(query, ignoreCase = true) == true || 
+                agent.email.contains(query, ignoreCase = true)
+
+            // Visibility Match
+            val matchesVisibility = when (visibility) {
+                VisibilityFilter.ALL -> true
+                VisibilityFilter.SEEN_TODAY -> com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isToday(agent.timestamp)
+                VisibilityFilter.UNSEEN_TODAY -> !com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isToday(agent.timestamp)
+            }
+
+            matchesSearch && matchesVisibility
         }
-        
-        val filtered = _uiState.value.agents.filter {
-            it.fullName?.contains(query, ignoreCase = true) == true || 
-            it.email.contains(query, ignoreCase = true)
-        }
-        _uiState.update { it.copy(searchResults = filtered) }
+
+        _uiState.update { it.copy(searchResults = filtered, lastUpdated = System.currentTimeMillis()) }
     }
 
     fun toggleUserStatus(userId: String, newStatus: Boolean) {
@@ -92,8 +111,6 @@ class AdminUserManagementViewModel(
             when (val result = updateUserStatus(userId, newStatus)) {
                 is AppResult.Success -> {
                     Timber.d("✅ Status updated successfully for $userId")
-                    // No need to reload everything if optimistic update succeeded, 
-                    // but we call it to ensure sync with server state
                     loadUsers() 
                 }
                 is AppResult.Error -> {
