@@ -81,62 +81,73 @@ data class Colors(
     val elevation: Color,
 )
 
+val Slate900: Color = Color(0xFF0F172A)
+val Slate800: Color = Color(0xFF1E293B)
+val Slate700: Color = Color(0xFF334155)
+val Slate600: Color = Color(0xFF475569)
+val Slate500: Color = Color(0xFF64748B)
+val Slate400: Color = Color(0xFF94A3B8)
+val Slate300: Color = Color(0xFFCBD5E1)
+val Slate200: Color = Color(0xFFE2E8F0)
+val Slate100: Color = Color(0xFFF1F5F9)
+val Slate50: Color = Color(0xFFF8FAFC)
+
 internal val LightColors =
     Colors(
-        primary = Black,
+        primary = Slate900,
         onPrimary = White,
-        secondary = Gray400,
-        onSecondary = Black,
-        tertiary = Blue900,
+        secondary = Slate600,
+        onSecondary = White,
+        tertiary = Blue700,
         onTertiary = White,
-        surface = Gray200,
-        onSurface = Black,
+        surface = White,
+        onSurface = Slate900,
         error = Red600,
         onError = White,
-        success = Green600,
+        success = Green700,
         onSuccess = White,
-        disabled = Gray100,
-        onDisabled = Gray500,
-        background = White,
-        onBackground = Black,
-        outline = Gray300,
+        disabled = Slate200,
+        onDisabled = Slate400,
+        background = Slate50,
+        onBackground = Slate900,
+        outline = Slate300,
         transparent = Color.Transparent,
         white = White,
         black = Black,
-        text = Black,
-        textSecondary = Gray700,
-        textDisabled = Gray400,
-        scrim = Color.Black.copy(alpha = 0.32f),
-        elevation = Gray700,
+        text = Slate900,
+        textSecondary = Slate600,
+        textDisabled = Slate400,
+        scrim = Black.copy(alpha = 0.32f),
+        elevation = Slate300,
     )
 
 internal val DarkColors =
     Colors(
         primary = White,
-        onPrimary = Black,
-        secondary = Gray400,
+        onPrimary = Slate900,
+        secondary = Slate400,
         onSecondary = White,
-        tertiary = Blue300,
-        onTertiary = Black,
-        surface = Gray900,
+        tertiary = Blue400,
+        onTertiary = Slate900,
+        surface = Slate900,
         onSurface = White,
         error = Red400,
         onError = Black,
-        success = Green700,
+        success = Green400,
         onSuccess = Black,
-        disabled = Gray700,
-        onDisabled = Gray500,
-        background = Black,
+        disabled = Slate800,
+        onDisabled = Slate600,
+        background = Color(0xFF020617),
         onBackground = White,
-        outline = Gray800,
+        outline = Slate700,
         transparent = Color.Transparent,
         white = White,
         black = Black,
         text = White,
-        textSecondary = Gray300,
-        textDisabled = Gray600,
-        scrim = Color.Black.copy(alpha = 0.72f),
-        elevation = Gray200,
+        textSecondary = Slate400,
+        textDisabled = Slate600,
+        scrim = Black.copy(alpha = 0.72f),
+        elevation = Slate800,
     )
 
 val LocalColors = staticCompositionLocalOf { LightColors }
@@ -153,6 +164,15 @@ fun Colors.contentColorFor(backgroundColor: Color): Color {
         success -> onSuccess
         disabled -> onDisabled
         background -> onBackground
-        else -> Color.Unspecified
+        outline -> onBackground
+        elevation -> onBackground
+        scrim -> onPrimary
+        transparent -> onBackground
+        white -> black
+        black -> white
+        text -> background
+        textSecondary -> background
+        textDisabled -> background
+        else -> onBackground // Default to onBackground for unknown colors
     }
 }

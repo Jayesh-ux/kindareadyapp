@@ -101,8 +101,8 @@ class RouteCalculationRepository(
 
                 // Check distance first (quick check)
                 when {
-                    distance < 2.0 -> {
-                        return false to "Train not recommended for very short distances under 2 KM. Try Bus, Rickshaw, or Bike instead."
+                    distance < 1.0 -> {
+                        return false to "Train not recommended for very short distances under 1 KM. Try Bus, Rickshaw, or Bike instead."
                     }
                     distance > 500.0 -> {
                         return false to "Distance too long for train calculation (${String.format("%.0f", distance)} KM). Consider Flight mode."
@@ -173,10 +173,11 @@ class RouteCalculationRepository(
                 val query = """
                     [out:json][timeout:25];
                     (
-                      node["railway"="station"](around:$radius,$lat,$lon);
-                      node["railway"="halt"](around:$radius,$lat,$lon);
+                      node["railway"~"station|halt"](around:$radius,$lat,$lon);
+                      way["railway"~"station|halt"](around:$radius,$lat,$lon);
+                      rel["railway"~"station|halt"](around:$radius,$lat,$lon);
                     );
-                    out body;
+                    out center;
                 """.trimIndent()
 
                 if (attempt > 0) {

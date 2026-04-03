@@ -39,7 +39,7 @@ fun TrackingRequiredOverlay(
     onRefreshStatus: () -> Unit
 ) {
     Box(
-        modifier = modifier.background(Color.Black.copy(alpha = 0.7f)),
+        modifier = modifier.background(AppTheme.colors.background.copy(alpha = 0.95f)),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -50,26 +50,29 @@ fun TrackingRequiredOverlay(
             Icon(
                 imageVector = Icons.Default.LocationOff,
                 contentDescription = null,
-                tint = Color.White,
+                tint = AppTheme.colors.error,
                 modifier = Modifier.size(64.dp)
             )
             androidx.compose.material3.Text(
-                text = "Background Tracking Required",
-                style = AppTheme.typography.h3,
-                color = Color.White,
+                text = "Tracking Required",
+                style = AppTheme.typography.h2,
+                color = AppTheme.colors.text,
                 textAlign = TextAlign.Center
             )
             androidx.compose.material3.Text(
                 text = "To ensure safety and accurate logs, please enable background tracking.",
                 style = AppTheme.typography.body2,
-                color = Color.White.copy(alpha = 0.8f),
+                color = AppTheme.colors.textSecondary,
                 textAlign = TextAlign.Center
             )
-            Button(onClick = onEnableTracking) {
-                androidx.compose.material3.Text("Enable Tracking")
+            Button(
+                onClick = onEnableTracking,
+                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary)
+            ) {
+                androidx.compose.material3.Text("Enable Tracking", color = AppTheme.colors.onPrimary)
             }
             TextButton(onClick = onRefreshStatus) {
-                androidx.compose.material3.Text("I've enabled it", color = Color.White)
+                androidx.compose.material3.Text("I've enabled it", color = AppTheme.colors.primary)
             }
         }
     }
@@ -201,15 +204,15 @@ fun AnimatedClientBottomSheet(
 @Composable
 fun VisitStatusIndicator(status: VisitStatus) {
     val (color, label) = when (status) {
-        VisitStatus.NEVER_VISITED -> Color(0xFFEA4335) to "Never Visited"
-        VisitStatus.RECENT -> Color(0xFF34A853) to "Recent"
-        VisitStatus.MODERATE -> Color(0xFFFBBC04) to "Follow-up"
-        VisitStatus.OVERDUE -> Color(0xFFFF6D00) to "Overdue"
+        VisitStatus.NEVER_VISITED -> Color(0xFFEF4444) to "Never Visited"
+        VisitStatus.RECENT -> Color(0xFF10B981) to "Recent"
+        VisitStatus.MODERATE -> Color(0xFFF59E0B) to "Follow-up"
+        VisitStatus.OVERDUE -> Color(0xFFF97316) to "Overdue"
     }
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.1f)).padding(horizontal = 8.dp, vertical = 4.dp)
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
-        androidx.compose.material3.Text(text = label, color = color, style = AppTheme.typography.label2)
+        androidx.compose.material3.Text(text = label, color = color, style = AppTheme.typography.label2, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -285,25 +288,35 @@ fun EnhancedMapLegend(
     onFilterChange: (VisitStatus) -> Unit,
     agentCount: Int? = null
 ) {
-    Column(modifier = modifier.clip(RoundedCornerShape(16.dp)).background(Color.White).padding(12.dp)) {
+    Column(
+        modifier = modifier
+            .width(260.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(AppTheme.colors.surface.copy(alpha = 0.98f))
+            .border(1.dp, AppTheme.colors.outline.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+            .padding(12.dp)
+    ) {
         Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle), horizontalArrangement = Arrangement.SpaceBetween) {
-            androidx.compose.material3.Text("Legend", fontWeight = FontWeight.Bold)
-            Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+            androidx.compose.material3.Text("Legend", fontWeight = FontWeight.Bold, color = AppTheme.colors.text)
+            Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = if (isExpanded) "Collapse legend" else "Expand legend", tint = AppTheme.colors.textSecondary)
         }
         if (isExpanded) {
             VisitStatus.values().forEach { status ->
                 EnhancedLegendItem(
-                    label = status.name,
+                    label = status.name.replace("_", " ").lowercase().capitalize(),
                     color = when(status) {
-                        VisitStatus.NEVER_VISITED -> Color.Red
-                        VisitStatus.RECENT -> Color.Green
-                        VisitStatus.MODERATE -> Color.Yellow
-                        VisitStatus.OVERDUE -> Color.Gray
+                        VisitStatus.NEVER_VISITED -> Color(0xFFEF4444)
+                        VisitStatus.RECENT -> Color(0xFF10B981)
+                        VisitStatus.MODERATE -> Color(0xFFF59E0B)
+                        VisitStatus.OVERDUE -> Color(0xFFF97316)
                     },
                     count = clientCounts[status] ?: 0,
                     isEnabled = filteredStatuses.contains(status),
                     onClick = { onFilterChange(status) }
                 )
+            }
+            agentCount?.let {
+                EnhancedLegendItem(label = "Live agents", color = Color(0xFF3B82F6), count = it, isEnabled = true, onClick = {})
             }
         }
     }
@@ -349,7 +362,26 @@ fun AgentRosterSheet(agents: List<com.bluemix.clients_lead.domain.repository.Age
 
 @Composable
 fun AgentRosterItem(agent: com.bluemix.clients_lead.domain.repository.AgentLocation, isSelected: Boolean, onClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).background(if (isSelected) Color.LightGray else Color.Transparent).padding(16.dp)) {
-        androidx.compose.material3.Text(agent.fullName ?: "Agent")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(if (isSelected) AppTheme.colors.primary.copy(alpha = 0.08f) else Color.Transparent)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(if (isOnline) Color(0xFF10B981) else AppTheme.colors.textDisabled)
+        )
+        androidx.compose.material3.Text(
+            text = agent.fullName ?: agent.email,
+            color = if (isSelected) AppTheme.colors.primary else AppTheme.colors.text,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }

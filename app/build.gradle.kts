@@ -113,7 +113,7 @@ dependencies {
     implementation(libs.play.services.maps)
     implementation(libs.play.services.location)
     implementation(libs.maps.compose)
-    implementation("com.google.maps.android:places-ktx:3.1.0")
+    implementation(libs.maps.compose.utils)
     implementation("com.google.android.libraries.places:places:3.3.0")
 
     // Image loading

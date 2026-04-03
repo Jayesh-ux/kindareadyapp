@@ -18,6 +18,14 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // ✅ CRITICAL: Set global exception handler FIRST
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            Timber.e(throwable, "💥 UNCAUGHT EXCEPTION in ${thread.name}")
+            android.util.Log.e("App", "CRASH: ${throwable.javaClass.simpleName}: ${throwable.message}")
+            // Let the default handler finish
+            throw throwable
+        }
+
         // ✅ CRITICAL: Initialize Timber FIRST
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
@@ -26,20 +34,26 @@ class App : Application() {
         // ✅ Test that Timber works
         Timber.d("🚀 App Started - Timber is working!")
 
-        startKoin {
-            androidLogger(Level.ERROR)
-            androidContext(this@App)
-            modules(
-                appModule,
-                authModule,
-                clientModule,
-                locationModule,
-                profileModule,
-                expenseModule,
-                meetingModule,
-                adminModule,
-                paymentModule
-            )
+        try {
+            startKoin {
+                androidLogger(Level.ERROR)
+                androidContext(this@App)
+                modules(
+                    appModule,
+                    authModule,
+                    clientModule,
+                    locationModule,
+                    profileModule,
+                    expenseModule,
+                    meetingModule,
+                    adminModule,
+                    paymentModule
+                )
+            }
+            Timber.d("✅ Koin initialized successfully")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error initializing Koin")
+            throw e
         }
 
         createNotificationChannels()

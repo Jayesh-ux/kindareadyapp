@@ -126,7 +126,12 @@ class AuthRepositoryImpl(
                 Log.d("AUTH", "🔥 Restoring user session from token...")
                 val response = httpClient.get(ApiEndpoints.Auth.PROFILE).body<ProfileResponse>()
 
-                val token = tokenStorage.getToken()!!
+                val token = tokenStorage.getToken() ?: ""
+                if (token.isEmpty()) {
+                    Log.e("AUTH", "❌ No token found during recovery, clearing session")
+                    sessionManager.clearSession()
+                    return null
+                }
 
                 // ✅ Restore full user data including trial status
                 val authUser = AuthUser(

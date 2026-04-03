@@ -64,7 +64,7 @@ fun AdminDashboardScreen(
                 )
             }
         },
-        containerColor = Color(0xFF0F172A)
+        containerColor = AppTheme.colors.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -72,7 +72,7 @@ fun AdminDashboardScreen(
                 .padding(padding)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color(0xFF0F172A), Color(0xFF020617))
+                        colors = listOf(AppTheme.colors.background, AppTheme.colors.surface)
                     )
                 )
                 .verticalScroll(rememberScrollState())
@@ -84,7 +84,7 @@ fun AdminDashboardScreen(
                 Text(
                     text = "Overview",
                     style = AppTheme.typography.label1,
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = AppTheme.colors.textSecondary,
                     modifier = Modifier.padding(start = 4.dp)
                 )
                 Row(
@@ -120,7 +120,7 @@ fun AdminDashboardScreen(
                 Text(
                     text = "Command Center",
                     style = AppTheme.typography.h3,
-                    color = Color.White,
+                    color = AppTheme.colors.text,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp
                 )
@@ -178,8 +178,8 @@ fun AdminDashboardScreen(
                     onClick = viewModel::retryGeocoding,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    color = Color.White.copy(alpha = 0.05f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                    color = AppTheme.colors.surface.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, AppTheme.colors.outline)
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -188,8 +188,8 @@ fun AdminDashboardScreen(
                     ) {
                         Icon(Icons.Default.CloudSync, null, tint = Color(0xFF60A5FA), modifier = Modifier.size(20.dp))
                         Column {
-                            Text("Self-Heal Database", color = Color.White, style = AppTheme.typography.body1, fontWeight = FontWeight.Bold)
-                            Text("Recover missing client locations", color = Color.White.copy(alpha = 0.5f), style = AppTheme.typography.body3)
+                            Text("Self-Heal Database", color = AppTheme.colors.text, style = AppTheme.typography.body1, fontWeight = FontWeight.Bold)
+                            Text("Recover missing client locations", color = AppTheme.colors.textSecondary, style = AppTheme.typography.body3)
                         }
                     }
                 }
@@ -205,7 +205,7 @@ fun AdminDashboardScreen(
                     Text(
                         text = "Real-time Field Activity",
                         style = AppTheme.typography.h3,
-                        color = Color.White,
+                        color = AppTheme.colors.text,
                         fontWeight = FontWeight.Bold
                     )
                     IconButton(onClick = viewModel::refreshDashboard) {
@@ -250,7 +250,7 @@ fun AdminDashboardScreen(
                                             VisibilityFilter.SEEN_TODAY -> "Seen"
                                             VisibilityFilter.UNSEEN_TODAY -> "Unseen"
                                         },
-                                        color = if (isSelected) color else Color.White.copy(alpha = 0.6f),
+                                        color = if (isSelected) color else AppTheme.colors.textSecondary,
                                         style = AppTheme.typography.label2,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                     )
@@ -277,7 +277,7 @@ fun AdminDashboardScreen(
                         ) {
                             Text(
                                 text = "Waiting for team movement...",
-                                color = Color.White.copy(alpha = 0.3f),
+                                color = AppTheme.colors.textSecondary,
                                 style = AppTheme.typography.body2
                             )
                         }
@@ -328,14 +328,14 @@ private fun StatCard(
                 Text(
                     text = value,
                     style = AppTheme.typography.h2,
-                    color = Color.White,
+                    color = AppTheme.colors.text,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 24.sp
                 )
                 Text(
                     text = title,
                     style = AppTheme.typography.label2,
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = AppTheme.colors.textSecondary,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -371,14 +371,14 @@ private fun AdminNavCard(
             Text(
                 text = title,
                 style = AppTheme.typography.h4,
-                color = Color.White,
+                color = AppTheme.colors.text,
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp
             )
             Text(
                 text = subtitle,
                 style = AppTheme.typography.body3,
-                color = Color.White.copy(alpha = 0.4f),
+                color = AppTheme.colors.textSecondary,
                 fontSize = 11.sp,
                 lineHeight = 15.sp
             )
@@ -398,7 +398,7 @@ private fun AgentActivityRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.03f))
+            .background(AppTheme.colors.surface.copy(alpha = 0.5f))
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
@@ -474,7 +474,7 @@ private fun AgentActivityRow(
                 Text(
                     text = agent.fullName ?: agent.email,
                     style = AppTheme.typography.body1,
-                    color = Color.White,
+                    color = AppTheme.colors.text,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
@@ -486,7 +486,7 @@ private fun AgentActivityRow(
                         else -> "Inactive for ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}"
                     },
                     style = AppTheme.typography.body3,
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = AppTheme.colors.textSecondary,
                     fontSize = 13.sp
                 )
             }
@@ -503,7 +503,7 @@ private fun AgentActivityRow(
                     Text(
                         text = "${battery}%",
                         style = AppTheme.typography.body3,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = AppTheme.colors.textSecondary,
                         fontSize = 11.sp
                     )
                 }

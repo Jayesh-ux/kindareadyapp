@@ -56,24 +56,29 @@ class SessionViewModel(
 
     private fun observeLiveAuthChanges() {
         viewModelScope.launch {
-            // Only listen for active login/logout events
-            observeAuthState().collect { user ->
-                Log.d("SessionViewModel", "👤 Auth state changed: ${user?.email ?: "null"}")
+            try {
+                // Only listen for active login/logout events
+                observeAuthState().collect { user ->
+                    Log.d("SessionViewModel", "👤 Auth state changed: ${user?.email ?: "null"}")
 
-                // CRITICAL FIX: Only update if user is not null (actual login event)
-                // Don't override with null on app restart
-                if (user != null) {
-                    Log.d("SessionViewModel", "✅ User logged in: ${user.email}")
-                    _state.update { it.copy(isAuthenticated = true, user = user) }
-                } else {
-                    // User explicitly logged out (SessionManager.clearSession was called)
-                    // Only clear if we don't have a token anymore
-                    val hasToken = runCatching { isLoggedIn() }.getOrDefault(false)
-                    if (!hasToken) {
-                        Log.d("SessionViewModel", "🚪 User logged out")
-                        _state.update { it.copy(isAuthenticated = false, user = null) }
+                    // CRITICAL FIX: Only update if user is not null (actual login event)
+                    // Don't override with null on app restart
+                    if (user != null) {
+                        Log.d("SessionViewModel", "✅ User logged in: ${user.email}")
+                        _state.update { it.copy(isAuthenticated = true, user = user) }
+                    } else {
+                        // User explicitly logged out (SessionManager.clearSession was called)
+                        // Only clear if we don't have a token anymore
+                        val hasToken = runCatching { isLoggedIn() }.getOrDefault(false)
+                        if (!hasToken) {
+                            Log.d("SessionViewModel", "🚪 User logged out")
+                            _state.update { it.copy(isAuthenticated = false, user = null) }
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e("SessionViewModel", "Error in observeLiveAuthChanges", e)
+                // Continue anyway - state is already initialized
             }
         }
     }

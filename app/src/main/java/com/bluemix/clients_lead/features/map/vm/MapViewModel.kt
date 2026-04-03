@@ -52,7 +52,7 @@ data class MapUiState(
     val activeJourneyClientId: String? = null,
     val showOnlineAgentsOnly: Boolean = false,
     val showHighAccuracyOnly: Boolean = false,
-    val showClients: Boolean = false, // ✅ NEW: Hide by default
+    val showClients: Boolean = true, // ✅ UPDATED: Show by default for immediate data visibility
     val agentFilter: String = "All", // ✅ NEW: All, Idle, Overdue
     val showAgentRoster: Boolean = false, // ✅ NEW
     val dailySummary: com.bluemix.clients_lead.domain.model.DailySummary? = null, // ✅ NEW
@@ -84,12 +84,41 @@ class MapViewModel(
     private var searchJob: Job? = null
     private var teamRefreshJob: Job? = null
     init {
-        observeTrackingState()
-        observeAuth()
-        refreshTrackingState()
-        fetchLocationImmediately()
-        startLocationPolling()
-        observeLocationSettings()
+        try {
+            observeTrackingState()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in observeTrackingState")
+        }
+        
+        try {
+            observeAuth()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in observeAuth")
+        }
+        
+        try {
+            refreshTrackingState()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in refreshTrackingState")
+        }
+        
+        try {
+            fetchLocationImmediately()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in fetchLocationImmediately")
+        }
+        
+        try {
+            startLocationPolling()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in startLocationPolling")
+        }
+        
+        try {
+            observeLocationSettings()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in observeLocationSettings")
+        }
     }
     @Volatile private var authResolved = false
     private fun observeAuth() {
@@ -191,16 +220,7 @@ class MapViewModel(
     }
     private fun refreshTeamLocations() {
         viewModelScope.launch {
-            val result = if (_uiState.value.isAdmin) {
-                (context as? com.bluemix.clients_lead.domain.repository.IClientRepository)?.getLiveAgents() ?: getTeamLocations()
-            } else {
-                getTeamLocations()
-            }
-            
-            // Wait, I should use the repository directly if possible or the use case.
-            // I'll update it to use a new UseCase or just call repository.
-            // Actually, I'll just update loadTeamMembers to use getLiveAgents.
-            
+            // Trigger fresh data fetch for team and summary
             loadTeamMembers()
             fetchDailySummary() // Keep summary fresh too
         }
@@ -391,7 +411,7 @@ class MapViewModel(
         viewModelScope.launch {
             try {
                 val locationManager = com.bluemix.clients_lead.features.location.LocationManager(
-                    context = org.koin.core.context.GlobalContext.get().get()
+                    context = context
                 )
                 val location = locationManager.getLastKnownLocation()
                 location?.let {
@@ -416,7 +436,9 @@ class MapViewModel(
 
     private fun fetchSelectedAgentJourney(agentId: String) {
         viewModelScope.launch {
-            val dateStr = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            val dateStr = sdf.format(java.util.Calendar.getInstance().time)
+            
             _uiState.update { it.copy(isLoading = true) }
             when (val result = getLocationLogsByDateRange(agentId, dateStr, dateStr, limit = 1500, page = 1)) {
                 is AppResult.Success -> {

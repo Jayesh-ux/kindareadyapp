@@ -79,8 +79,8 @@ class LocationManager(
                 .lastLocation
                 .addOnSuccessListener { location ->
                     if (location != null) {
-                        val latitude = String.format("%.6f", location.latitude)
-                        val longitude = String.format("%.6f", location.longitude)
+                        val latitude = String.format(java.util.Locale.US, "%.6f", location.latitude)
+                        val longitude = String.format(java.util.Locale.US, "%.6f", location.longitude)
                         onSuccess(latitude, longitude)
                     } else {
                         onError("Location not available. Try again.")
@@ -164,6 +164,7 @@ class LocationManager(
                 locationCallback,
                 Looper.getMainLooper()
             ).addOnFailureListener { exception ->
+                Timber.e(exception, "Failed to request location updates")
                 close(exception)
             }
         } catch (e: SecurityException) {
@@ -203,8 +204,8 @@ class LocationManager(
  * Extension function to format Location for display
  */
 fun Location.toFormattedString(): String {
-    val lat = String.format("%.6f", latitude)
-    val lng = String.format("%.6f", longitude)
+    val lat = String.format(java.util.Locale.US, "%.6f", latitude)
+    val lng = String.format(java.util.Locale.US, "%.6f", longitude)
     return "Lat: $lat, Lng: $lng"
 }
 

@@ -119,52 +119,61 @@ class LocationTrackerService : Service() {
     private lateinit var notificationBuilder: NotificationCompat.Builder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // CRITICAL: Call startForeground() IMMEDIATELY before doing anything else
-        // This is the first line to prevent ForegroundServiceDidNotStartInTimeException
-        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        notificationBuilder = NotificationCompat.Builder(this, LOCATION_CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Location Tracker")
-            .setContentText("Starting location tracking...")
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
+        // CRITICAL: Call startForeground() IMMEDIATELY as the very first operation
+        // This prevents ForegroundServiceDidNotStartInTimeException on Android 12+ (API 31+)
+        try {
+            notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationBuilder = NotificationCompat.Builder(this, LOCATION_CHANNEL)
+                .setSmallIcon(com.bluemix.clients_lead.R.mipmap.ic_launcher)
+                .setContentTitle("Location Tracker")
+                .setContentText("Starting location tracking...")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID, 
-                notificationBuilder.build(), 
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notificationBuilder.build())
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID, 
+                    notificationBuilder.build(), 
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notificationBuilder.build())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LocationTrackerService", "Failed to start foreground immediately", e)
         }
 
-        // Now handle the intent
-        when (intent?.action) {
-            Action.START.name -> {
-                activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
-                val userId = sessionManager.getCurrentUserId()
-                if (userId != null) {
-                    start(userId)
-                } else {
-                    Timber.e("Cannot start tracking: User not authenticated")
-                    stop()
+        return try {
+            // Now handle the intent
+            when (intent?.action) {
+                Action.START.name -> {
+                    activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
+                    val userId = sessionManager.getCurrentUserId()
+                    if (userId != null) {
+                        start(userId)
+                    } else {
+                        Timber.e("Cannot start tracking: User not authenticated")
+                        stop()
+                    }
                 }
-            }
-            Action.UPDATE_CLIENT.name -> {
-                activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
-                activeClientName = intent.getStringExtra(EXTRA_CLIENT_NAME)
-                transportMode = intent.getStringExtra(EXTRA_TRANSPORT_MODE)
-                activeClientLat = if (intent.hasExtra(EXTRA_CLIENT_LAT)) intent.getDoubleExtra(EXTRA_CLIENT_LAT, 0.0) else null
-                activeClientLng = if (intent.hasExtra(EXTRA_CLIENT_LNG)) intent.getDoubleExtra(EXTRA_CLIENT_LNG, 0.0) else null
-                persistState() // S5: save to disk
+                Action.UPDATE_CLIENT.name -> {
+                    activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
+                    activeClientName = intent.getStringExtra(EXTRA_CLIENT_NAME)
+                    transportMode = intent.getStringExtra(EXTRA_TRANSPORT_MODE)
+                    activeClientLat = if (intent.hasExtra(EXTRA_CLIENT_LAT)) intent.getDoubleExtra(EXTRA_CLIENT_LAT, 0.0) else null
+                    activeClientLng = if (intent.hasExtra(EXTRA_CLIENT_LNG)) intent.getDoubleExtra(EXTRA_CLIENT_LNG, 0.0) else null
+                    persistState() // S5: save to disk
                 Timber.d("📍 Updated active client: $activeClientName ($activeClientId) via $transportMode at ($activeClientLat, $activeClientLng)")
             }
             Action.STOP.name -> stop()
+            }
+
+            START_STICKY // ✅ Ensure service restarts if killed
+        } catch (e: Exception) {
+            android.util.Log.e("LocationTrackerService", "Error in onStartCommand", e)
+            Timber.e(e, "❌ Error in onStartCommand")
+            START_STICKY
         }
-
-        return START_STICKY // ✅ Ensure service restarts if killed
-
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -223,8 +232,8 @@ class LocationTrackerService : Service() {
                     latestLocation = location
                     _locationFlow.emit(location)
 
-                    val latitude = String.format("%.4f", location.latitude)
-                    val longitude = String.format("%.4f", location.longitude)
+                    val latitude = String.format(java.util.Locale.US, "%.4f", location.latitude)
+                    val longitude = String.format(java.util.Locale.US, "%.4f", location.longitude)
 
                     notificationManager.notify(
                         NOTIFICATION_ID,
@@ -407,8 +416,16 @@ class LocationTrackerService : Service() {
         stopSelf()
     }
 
+    override fun onCreate() {
+        super.onCreate()
+        isServiceRunning = true
+        Timber.d("Service created")
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        isServiceRunning = false
+        // ...
 
         // Ensure all jobs are cancelled
         locationTrackingJob?.cancel()
@@ -425,6 +442,8 @@ class LocationTrackerService : Service() {
     }
 
     companion object {
+        var isServiceRunning = false
+            private set
         const val LOCATION_CHANNEL = "location_channel"
         private const val NOTIFICATION_ID = 1
         const val EXTRA_CLIENT_ID = "extra_client_id"
@@ -436,18 +455,5 @@ class LocationTrackerService : Service() {
 }
 
 fun isTrackingServiceRunning(context: Context): Boolean {
-    try {
-        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
-            if (service.service.className == LocationTrackerService::class.java.name) {
-                return true
-            }
-        }
-    } catch (_: Exception) {}
-
-    // Fallback check – foreground service notification exists
-    val notificationServiceId = 1  // same as NOTIFICATION_ID in service
-    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val notifications = notificationManager.activeNotifications
-    return notifications.any { it.id == notificationServiceId }
+    return LocationTrackerService.isServiceRunning
 }

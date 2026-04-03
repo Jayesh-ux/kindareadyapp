@@ -13,6 +13,8 @@ object MapUtils {
      */
     fun vectorToBitmap(context: Context, drawableId: Int): BitmapDescriptor? {
         val drawable = ContextCompat.getDrawable(context, drawableId) ?: return null
+        if (drawable.intrinsicWidth <= 0 || drawable.intrinsicHeight <= 0) return null
+        
         drawable.setBounds(0, 0, drawable.intrinsicWidth, drawable.intrinsicHeight)
         val bitmap = Bitmap.createBitmap(
             drawable.intrinsicWidth,

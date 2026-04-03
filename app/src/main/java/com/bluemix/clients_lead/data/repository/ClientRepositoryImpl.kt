@@ -495,19 +495,19 @@ fun AgentLocationDto.toDomain(): com.bluemix.clients_lead.domain.repository.Agen
     return com.bluemix.clients_lead.domain.repository.AgentLocation(
         id = id,
         email = email,
-        fullName = fullName,
+        fullName = fullName ?: email.substringBefore("@"), // Fallback to email prefix
         latitude = latitude,
         longitude = longitude,
         accuracy = accuracy,
-        timestamp = timestamp,
-        activity = activity,
-        battery = battery ?: battery_level, // Use whichever is available
-        smartStatus = smart_status,
+        timestamp = timestamp ?: System.currentTimeMillis().toString(),
+        activity = activity ?: "Active",
+        battery = battery ?: battery_level ?: 0,
+        smartStatus = smart_status ?: activity ?: "Active",
         visitCount = visit_count ?: 0,
         isActive = isActive ?: true,
         currentClientName = clientName,
         transportMode = transportMode,
-        currentActivity = currentActivity
+        currentActivity = currentActivity ?: activity ?: "Active"
     )
 }
 
