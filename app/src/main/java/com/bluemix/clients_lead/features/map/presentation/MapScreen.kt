@@ -471,86 +471,71 @@ fun MapScreen(
                     )
                 ) {
                     if (showMarkers) {
-                        if (uiState.clients.isEmpty() && uiState.agents.isEmpty() && !uiState.isLoading) {
-                            Timber.w("🗺️ MAP EMPTY: No clients found.")
-                        } else {
-                            Timber.d("🗺️ RENDERING MARKERS - Clients: ${visibleClientMarkers.size}, Agents: ${filteredAgentsForMap.size}")
-                        }
-
+                        // 🔹 Rendering Markers
                         visibleClientMarkers.forEach { client ->
-                            try {
-                                if (client.latitude != null && client.longitude != null) {
+                            val lat = client.latitude
+                            val lng = client.longitude
+                            if (lat != null && lng != null) {
                                 val visitStatus = client.getVisitStatusColor()
                                 val isSelectedStatus = if (filteredStatuses.isEmpty()) true else filteredStatuses.contains(visitStatus)
                                 
-                                // ✅ FOCUS MODE: Only show selected client pin when an agent is selected (Focus)
                                 val isTargetedClient = uiState.selectedClient?.id == client.id
                                 val isAgentFocusMode = uiState.selectedAgent != null
                                 
                                 if (isSelectedStatus && (!isAgentFocusMode || isTargetedClient)) {
-                                    val position = LatLng(client.latitude, client.longitude)
-
-                                val markerColor = when (visitStatus) {
-                                    VisitStatus.NEVER_VISITED -> BitmapDescriptorFactory.HUE_RED
-                                    VisitStatus.RECENT -> BitmapDescriptorFactory.HUE_GREEN
-                                    VisitStatus.MODERATE -> BitmapDescriptorFactory.HUE_YELLOW
-                                    VisitStatus.OVERDUE -> BitmapDescriptorFactory.HUE_ORANGE
-                                }
-
-                                val visitInfo = client.getFormattedLastVisit()?.let { "Last visit: $it" }
-                                    ?: "Never visited"
-
-                                val snippet = buildString {
-                                    append(visitInfo)
-                                    client.address?.let {
-                                        append(" • ")
-                                        append(it)
+                                    val position = LatLng(lat, lng)
+                                    val markerColor = when (visitStatus) {
+                                        VisitStatus.NEVER_VISITED -> BitmapDescriptorFactory.HUE_RED
+                                        VisitStatus.RECENT -> BitmapDescriptorFactory.HUE_GREEN
+                                        VisitStatus.MODERATE -> BitmapDescriptorFactory.HUE_YELLOW
+                                        VisitStatus.OVERDUE -> BitmapDescriptorFactory.HUE_ORANGE
                                     }
-                                }
 
-                                androidx.compose.runtime.key(client.id) {
-                                    val markerState = rememberMarkerState(position = position)
-                                    markerState.position = position
+                                    val visitInfo = client.getFormattedLastVisit()?.let { "Last visit: $it" } ?: "Never visited"
+                                    val snippet = buildString {
+                                        append(visitInfo)
+                                        client.address?.let { append(" • $it") }
+                                    }
 
-                                    Marker(
-                                        state = markerState,
-                                        title = client.name,
-                                        snippet = snippet,
-                                        icon = BitmapDescriptorFactory.defaultMarker(markerColor),
-                                        onClick = {
-                                            viewModel.selectClient(client)
-                                            coroutineScope.launch {
-                                                cameraPositionState.animate(
-                                                    update = CameraUpdateFactory.newLatLngZoom(position, 16f),
-                                                    durationMs = 500
-                                                )
+                                    androidx.compose.runtime.key(client.id) {
+                                        Marker(
+                                            state = rememberMarkerState(position = position),
+                                            title = client.name,
+                                            snippet = snippet,
+                                            icon = BitmapDescriptorFactory.defaultMarker(markerColor),
+                                            onClick = {
+                                                viewModel.selectClient(client)
+                                                coroutineScope.launch {
+                                                    cameraPositionState.animate(
+                                                        update = CameraUpdateFactory.newLatLngZoom(position, 16f),
+                                                        durationMs = 500
+                                                    )
+                                                }
+                                                false
                                             }
-                                            false // Show info window bubble right in map
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        // ✅ NEW: Render Agents (Admins only)
-                        if (uiState.isAdmin && filteredAgentsForMap.isNotEmpty()) {
+                        // 🔹 Render Agents (Admins only)
+                        if (uiState.isAdmin) {
                             filteredAgentsForMap.forEach { agent ->
-                                if (agent.latitude != null && agent.longitude != null) {
-                                    val position = LatLng(agent.latitude, agent.longitude)
+                                val lat = agent.latitude
+                                val lng = agent.longitude
+                                if (lat != null && lng != null) {
+                                    val position = LatLng(lat, lng)
                                     val isOnlineNow = DateTimeUtils.isRecent(agent.timestamp)
-                                    val isInMeeting = agent.currentActivity?.contains("meeting", ignoreCase = true) == true ||
-                                        agent.activity?.contains("meeting", ignoreCase = true) == true
-
+                                    val isInMeeting = agent.currentActivity?.contains("meeting", ignoreCase = true) == true
+                                    
                                     androidx.compose.runtime.key("agent-${agent.id}") {
-                                        val markerState = rememberMarkerState(position = position)
-                                        markerState.position = position
-
                                         Marker(
-                                            state = markerState,
+                                            state = rememberMarkerState(position = position),
                                             title = agent.fullName ?: agent.email,
                                             snippet = when {
                                                 isInMeeting -> agent.currentActivity ?: "In client visit"
-                                                isOnlineNow -> agent.currentActivity ?: agent.smartStatus ?: "Active now"
+                                                isOnlineNow -> agent.smartStatus ?: "Active now"
                                                 else -> "Last seen ${DateTimeUtils.formatLastSeen(agent.timestamp)}"
                                             },
                                             icon = if (isOnlineNow) {
@@ -566,7 +551,7 @@ fun MapScreen(
                                                         durationMs = 500
                                                     )
                                                 }
-                                                false // Show info bubble for agent
+                                                false
                                             }
                                         )
                                     }
@@ -574,39 +559,32 @@ fun MapScreen(
                             }
                         }
 
-                        // ✅ NEW: Pulsing Effect for Selected Agent (only if online)
+                        // 🔹 Pulsing Effect for Selected Agent
                         uiState.selectedAgent?.let { agent ->
-                            if (agent.latitude != null && agent.longitude != null) {
-                                val isOnlineForPulse = DateTimeUtils.isRecent(agent.timestamp)
-                                if (isOnlineForPulse) {
-                                    Circle(
-                                        center = LatLng(agent.latitude, agent.longitude),
-                                        radius = pulseSize.toDouble(),
-                                        fillColor = Color(0xFF3B82F6).copy(alpha = pulseAlpha),
-                                        strokeColor = Color(0xFF3B82F6).copy(alpha = pulseAlpha),
-                                        strokeWidth = 2f
-                                    )
-                                }
+                            val lat = agent.latitude
+                            val lng = agent.longitude
+                            if (lat != null && lng != null && DateTimeUtils.isRecent(agent.timestamp)) {
+                                Circle(
+                                    center = LatLng(lat, lng),
+                                    radius = pulseSize.toDouble(),
+                                    fillColor = Color(0xFF3B82F6).copy(alpha = pulseAlpha),
+                                    strokeColor = Color(0xFF3B82F6).copy(alpha = pulseAlpha),
+                                    strokeWidth = 2f
+                                )
                             }
                         }
 
-                        // ✅ NEW: Render Whole-Day Journey Overlay for Selected Agent
+                        // 🔹 Render Journey Overlay
                         if (uiState.selectedAgent != null && uiState.selectedAgentJourney.isNotEmpty()) {
-                            val journeyPoints = remember(uiState.selectedAgentJourney) {
-                                uiState.selectedAgentJourney.map { LatLng(it.latitude, it.longitude) }
-                            }
+                            val journeyPoints = uiState.selectedAgentJourney.map { LatLng(it.latitude, it.longitude) }
                             
-                            // 1. Draw the Travel Path
                             Polyline(
                                 points = journeyPoints,
                                 color = AppTheme.colors.primary.copy(alpha = 0.5f),
                                 width = 8f,
-                                jointType = com.google.android.gms.maps.model.JointType.ROUND,
-                                startCap = com.google.android.gms.maps.model.RoundCap(),
-                                endCap = com.google.android.gms.maps.model.RoundCap()
+                                jointType = com.google.android.gms.maps.model.JointType.ROUND
                             )
                             
-                            // 2. Activity Markers (Annotated Waypoints)
                             uiState.selectedAgentJourney.forEach { log ->
                                 if (!log.markActivity.isNullOrBlank()) {
                                     val logTime = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)
@@ -620,17 +598,13 @@ fun MapScreen(
                                         else -> BitmapDescriptorFactory.HUE_CYAN
                                     }
                                     
-                                    val rawLabel = log.markActivity.replace("_", " ").toLowerCase()
-                                    val activityLabel = if (rawLabel.isNotEmpty()) {
-                                        rawLabel.substring(0, 1).toUpperCase() + rawLabel.substring(1)
-                                    } else ""
-                                    val isVerified = !log.markNotes.isNullOrBlank() && log.markNotes.contains("proof", ignoreCase = true)
+                                    val activityLabel = log.markActivity.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
                                     
                                     androidx.compose.runtime.key("waypoint-${log.id}-${log.timestamp}") {
                                         Marker(
                                             state = rememberMarkerState(position = LatLng(log.latitude, log.longitude)),
                                             title = "$activityLabel: $clientName",
-                                            snippet = "Time: $logTime${if (isVerified) " • ✅ Verified" else ""}",
+                                            snippet = "Time: $logTime",
                                             icon = when(log.markActivity) {
                                                 "CLOCK_IN" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
                                                 "MEETING_START" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_start)
@@ -638,7 +612,6 @@ fun MapScreen(
                                                 "CLOCK_OUT", "LOGOUT" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_stop)
                                                 else -> BitmapDescriptorFactory.defaultMarker(markerColor)
                                             } ?: BitmapDescriptorFactory.defaultMarker(markerColor),
-                                            alpha = 1.0f,
                                             zIndex = 10f
                                         )
                                     }
@@ -1527,7 +1500,6 @@ fun MapScreen(
             shape = RoundedCornerShape(16.dp)
         )
     }
-}
 }
 }
 

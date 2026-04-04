@@ -36,6 +36,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.Circle
+import com.google.maps.android.compose.rememberMarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.bluemix.clients_lead.domain.model.LocationLog
 import com.bluemix.clients_lead.domain.repository.AgentLocation
@@ -475,7 +476,7 @@ private fun MapSection(
                         }
                     },
                 cameraPositionState = cameraPositionState,
-                uiSettings = MapUiSettings(zoomControlsEnabled = false),
+                uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = true),
                 properties = MapProperties(isMyLocationEnabled = true)
             ) {
                 if (points.isNotEmpty()) {
@@ -487,54 +488,55 @@ private fun MapSection(
                         jointType = com.google.android.gms.maps.model.JointType.ROUND
                     )
 
-                    // ✅ Key Markers
+                    // 🏁 Journey Markers
                     uiState.logs.forEachIndexed { index, log ->
-                        // Show start/end markers explicitly
+                        val position = LatLng(log.latitude, log.longitude)
+                        
+                        // Start/End Markers
                         if (index == 0) {
                             Marker(
-                                state = MarkerState(position = LatLng(log.latitude, log.longitude)),
+                                state = rememberMarkerState(position = position),
                                 title = "Journey Start",
                                 icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
                             )
                         } else if (index == uiState.logs.size - 1) {
                              Marker(
-                                state = MarkerState(position = LatLng(log.latitude, log.longitude)),
+                                state = rememberMarkerState(position = position),
                                 title = "Journey End",
                                 icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
                             )
                         }
                         
-                        // Show Meeting and Clock Start/End markers
-                        if (!log.markActivity.isNullOrBlank()) {
-                            // ✅ VISUAL GUIDE: Filter out TRAVELING markers to reduce clutter
-                            if (log.markActivity == "TRAVELING") return@forEachIndexed
-
-                        val icon = when(log.markActivity) {
-                            "MEETING_START" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_start)
-                            "MEETING_END" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_end)
-                            "CLOCK_IN" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
-                            "CLOCK_OUT", "LOGOUT", "JOURNEY_STOP" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_stop)
-                            "JOURNEY_START", "AT_CLIENT_SITE" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_start)
-                            else -> null
-                        } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
-                        
-                        Marker(
-                            state = MarkerState(position = LatLng(log.latitude, log.longitude)),
-                            title = log.markActivity.replace("_", " "),
-                            snippet = log.markNotes ?: "At ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)}",
-                            icon = icon
-                        )
+                        // Activity Waypoints
+                        if (!log.markActivity.isNullOrBlank() && log.markActivity != "TRAVELING") {
+                            val activityIcon = when(log.markActivity) {
+                                "MEETING_START" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_start)
+                                "MEETING_END" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_end)
+                                "CLOCK_IN" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
+                                "CLOCK_OUT", "LOGOUT", "JOURNEY_STOP" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_stop)
+                                "JOURNEY_START", "AT_CLIENT_SITE" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_start)
+                                else -> null
+                            } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
+                            
+                            Marker(
+                                state = rememberMarkerState(position = position),
+                                title = log.markActivity.replace("_", " "),
+                                snippet = log.markNotes ?: "At ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)}",
+                                icon = activityIcon
+                            )
                         }
                     }
 
-                    // ✅ LIVE AGENT POSITION (Distinct from historical logs)
-                    if (uiState.selectedDate == java.time.LocalDate.now()) {
+                    // 📍 Live Agent Position
+                    val isToday = uiState.selectedDate == java.time.LocalDate.now()
+                    if (isToday) {
                         uiState.selectedAgent?.let { agent ->
-                            if (agent.latitude != null && agent.longitude != null) {
-                                val livePos = LatLng(agent.latitude, agent.longitude)
+                            val lat = agent.latitude
+                            val lng = agent.longitude
+                            if (lat != null && lng != null) {
+                                val livePos = LatLng(lat, lng)
                                 val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
                                 
-                                // ✅ NEW: Pulsing Indicator for Live Pos (Cyan/Teal)
                                 if (isOnline) {
                                     Circle(
                                         center = livePos,
@@ -546,9 +548,9 @@ private fun MapSection(
                                 }
                                 
                                 Marker(
-                                    state = MarkerState(position = livePos),
+                                    state = rememberMarkerState(position = livePos),
                                     title = "Current Position (${agent.activity ?: "Live"})",
-                                    snippet = if (isOnline) "Active Now · ${agent.activity ?: "Tracking"}" else "Last seen ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}",
+                                    snippet = if (isOnline) "Active Now" else "Last seen ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}",
                                     icon = if (isOnline) {
                                         MapUtils.vectorToBitmap(context, R.drawable.ic_marker_live)
                                     } else {

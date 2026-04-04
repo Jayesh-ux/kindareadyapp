@@ -23,7 +23,7 @@ ktor = "3.0.1"
 # Google services
 playServicesLocation = "21.3.0"
 playServicesMaps = "18.2.0"
-mapsCompose = "4.3.3"
+mapsCompose = "6.1.2"
 
 # Accompanist (keep this aligned with your Compose minor)
 accompanist = "0.34.0"
