@@ -21,11 +21,99 @@ data class RouteResult(
 )
 
 class RouteCalculationRepository(
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val googleMapsApiKey: String? = null
 ) {
     companion object {
         private const val OSRM_BASE = "https://router.project-osrm.org"
         private const val OVERPASS_API = "https://overpass-api.de/api/interpreter"
+        private const val GOOGLE_DIRECTIONS_BASE = "https://maps.googleapis.com/maps/api/directions/json"
+    }
+
+    // Transport mode to Google Directions mode
+    private fun TransportMode.toGoogleMode(): String = when (this) {
+        TransportMode.CAR, TransportMode.TAXI, TransportMode.RICKSHAW, TransportMode.AUTO -> "driving"
+        TransportMode.BUS -> "driving"
+        TransportMode.TRAIN, TransportMode.METRO -> "transit"
+        TransportMode.BIKE -> "bicycling"
+        TransportMode.WALK, TransportMode.FLIGHT -> "walking"
+        TransportMode.OTHER -> "driving"
+    }
+
+    // Primary: Google Directions API (more reliable)
+    suspend fun calculateRouteWithGoogleDirections(
+        start: LocationPlace,
+        end: LocationPlace,
+        transportMode: TransportMode
+    ): RouteResult? {
+        val apiKey = googleMapsApiKey ?: return null
+        
+        return try {
+            val mode = transportMode.toGoogleMode()
+            val origin = "${start.latitude},${start.longitude}"
+            val destination = "${end.latitude},${end.longitude}"
+            val url = "$GOOGLE_DIRECTIONS_BASE?origin=$origin&destination=$destination&mode=$mode&key=$apiKey"
+            
+            Timber.d("🗺️ Fetching Google Directions: $mode")
+            
+            val response: GoogleDirectionsResponse = httpClient.get(url).body()
+            
+            if (response.status != "OK" || response.routes.isEmpty()) {
+                Timber.w("⚠️ Google Directions failed: ${response.status}")
+                return null
+            }
+            
+            val route = response.routes.first()
+            val leg = route.legs.first()
+            val distanceKm = leg.distance.value / 1000.0
+            val durationMinutes = leg.duration.value / 60
+            
+            // Decode polyline
+            val polyline = decodePolyline(route.overview_polyline.points)
+            
+            Timber.d("✅ Google route: ${distanceKm.round(2)} km, $durationMinutes min")
+            
+            RouteResult(
+                distanceKm = distanceKm.round(2),
+                durationMinutes = durationMinutes,
+                routePolyline = polyline
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Google Directions API failed")
+            null
+        }
+    }
+
+    // Decode Google encoded polyline - simplified
+    private fun decodePolyline(encoded: String): List<LatLng> {
+        val poly = mutableListOf<LatLng>()
+        var index = 0
+        var lat = 0
+        var lng = 0
+        
+        while (index < encoded.length) {
+            var shift = 0
+            var result: Int = 0
+            do {
+                val c = encoded[index++].code - 63
+                result = result or ((c and 0x1f) shl shift)
+                shift += 5
+            } while (c >= 0x20)
+            lat += if ((result and 1) != 0) -(result shr 1) else result shr 1
+            
+            shift = 0
+            result = 0
+            do {
+                val c = encoded[index++].code - 63
+                result = result or ((c and 0x1f) shl shift)
+                shift += 5
+            } while (c >= 0x20)
+            lng += if ((result and 1) != 0) -(result shr 1) else result shr 1
+            
+            poly.add(LatLng(lat / 1_000_000.0, lng / 1_000_000.0))
+        }
+        
+        return poly
     }
 
     suspend fun calculateRouteDistance(
@@ -36,7 +124,8 @@ class RouteCalculationRepository(
         return when (transportMode) {
             TransportMode.CAR,
             TransportMode.TAXI,
-            TransportMode.RICKSHAW -> calculateRoadDistance(start, end, "car")
+            TransportMode.RICKSHAW,
+            TransportMode.AUTO -> calculateRoadDistance(start, end, "car")
 
             TransportMode.BIKE -> calculateRoadDistance(start, end, "bike")
 
@@ -46,6 +135,9 @@ class RouteCalculationRepository(
             TransportMode.METRO -> calculateRailDistance(start, end)
 
             TransportMode.FLIGHT -> calculateFlightDistance(start, end)
+            
+            TransportMode.WALK -> calculateRoadDistance(start, end, "foot")
+            TransportMode.OTHER -> calculateRoadDistance(start, end, "car")
         }
     }
 
@@ -56,10 +148,17 @@ class RouteCalculationRepository(
     ): RouteResult {
         Timber.d("🗺️ calculateRouteWithGeometry called with mode: $transportMode")
 
+        // Try Google Directions first if API key is available
+        calculateRouteWithGoogleDirections(start, end, transportMode)?.let { googleResult ->
+            return googleResult
+        }
+
+        // Fallback to OSRM
         return when (transportMode) {
             TransportMode.CAR,
             TransportMode.TAXI,
-            TransportMode.RICKSHAW -> {
+            TransportMode.RICKSHAW,
+            TransportMode.AUTO -> {
                 Timber.d("🚗 Using car routing profile")
                 calculateRoadRouteWithGeometry(start, end, "car")
             }
@@ -85,6 +184,16 @@ class RouteCalculationRepository(
             TransportMode.FLIGHT -> {
                 Timber.d("✈️ Using flight routing")
                 calculateFlightRouteWithGeometry(start, end)
+            }
+            
+            TransportMode.WALK -> {
+                Timber.d("🚶 Using walking routing")
+                calculateRoadRouteWithGeometry(start, end, "foot")
+            }
+            
+            TransportMode.OTHER -> {
+                Timber.d("🚗 Using other (car profile)")
+                calculateRoadRouteWithGeometry(start, end, "car")
             }
         }
     }
@@ -425,4 +534,38 @@ data class OverpassElement(
     val lat: Double? = null,
     val lon: Double? = null,
     val tags: Map<String, String>? = null
+)
+
+// Google Directions API DTOs
+@Serializable
+data class GoogleDirectionsResponse(
+    val routes: List<GoogleRoute> = emptyList(),
+    val status: String = ""
+)
+
+@Serializable
+data class GoogleRoute(
+    val legs: List<GoogleLeg> = emptyList(),
+    val overview_polyline: GooglePolyline = GooglePolyline("")
+)
+
+@Serializable
+data class GoogleLeg(
+    val distance: GoogleDistance = GoogleDistance(0.0),
+    val duration: GoogleDuration = GoogleDuration(0)
+)
+
+@Serializable
+data class GoogleDistance(
+    val value: Double = 0.0
+)
+
+@Serializable
+data class GoogleDuration(
+    val value: Int = 0
+)
+
+@Serializable
+data class GooglePolyline(
+    val points: String = ""
 )

@@ -49,6 +49,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -369,13 +371,14 @@ fun MapScreen(
         }
     }
 
-    // ✅ NEW: Show sheet when a client is manually selected on the map
+    // Show AnimatedClientBottomSheet when a client is selected (NOT MeetingBottomSheet automatically)
+    // MeetingBottomSheet only opens when user explicitly clicks "Start Meeting"
     LaunchedEffect(uiState.selectedClient) {
         val selected = uiState.selectedClient
         if (selected != null) {
             proximityClient = selected
-            showMeetingSheet = true
-            meetingViewModel.checkActiveMeeting(selected.id)
+            // Don't auto-open MeetingBottomSheet - let user see AnimatedClientBottomSheet first
+            // showMeetingSheet will be set to true only when user clicks "Start Meeting" in AnimatedClientBottomSheet
         }
     }
 
@@ -440,7 +443,7 @@ fun MapScreen(
                                 modifier = Modifier.size(44.dp),
                                 onClick = { viewModel.logout() }) {
                                 Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Default.Logout,
+                                    imageVector = Icons.AutoMirrored.Filled.Logout,
                                     contentDescription = "Logout",
                                     tint = AppTheme.colors.textSecondary,
                                     modifier = Modifier.size(20.dp)
@@ -511,7 +514,7 @@ fun MapScreen(
                                                         durationMs = 500
                                                     )
                                                 }
-                                                false
+                                                true // Prevent default InfoWindow - show custom bottom sheet instead
                                             }
                                         )
                                     }
@@ -551,7 +554,7 @@ fun MapScreen(
                                                         durationMs = 500
                                                     )
                                                 }
-                                                false
+                                                true // Prevent default InfoWindow - show custom bottom sheet instead
                                             }
                                         )
                                     }
@@ -746,17 +749,21 @@ fun MapScreen(
                 }
 
 
-                // ✅ Persistent map overlay bar — always visible, no hidden menu
-                AnimatedVisibility(
-                    visible = uiState.isAdmin || uiState.isTrackingEnabled,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .zIndex(3f),
-                    enter = fadeIn() + slideInVertically(),
-                    exit = fadeOut() + slideOutVertically()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Surface(
+                    // Stats Panel
+                    AnimatedVisibility(
+                        visible = uiState.isAdmin || uiState.isTrackingEnabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .zIndex(3f),
+                        enter = fadeIn() + slideInVertically(),
+                        exit = fadeOut() + slideOutVertically()
+                    ) {
+                        Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp)),
@@ -822,19 +829,18 @@ fun MapScreen(
                             }
                         }
                     }
-                }
+                    }
 
-                // Search bar overlay — always visible below status bar
-                AnimatedVisibility(
-                    visible = uiState.isAdmin || uiState.isTrackingEnabled,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(horizontal = 12.dp)
-                        .padding(top = 60.dp)
-                        .zIndex(10f), // Ensure search is always on top
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
+                    // Search bar overlay — always visible below stats
+                    AnimatedVisibility(
+                        visible = uiState.isAdmin || uiState.isTrackingEnabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .zIndex(10f),
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         ui.components.textfield.TextField(
                                     value = uiState.searchQuery,
@@ -943,6 +949,8 @@ fun MapScreen(
                             }
                         }
                     }
+                }
+
                 AnimatedVisibility(
                     visible = (uiState.isTrackingEnabled || uiState.isAdmin) && !showMeetingSheet,
                     modifier = Modifier
@@ -1149,23 +1157,26 @@ fun MapScreen(
                     }
                 }
 
-                // Client Detail Modal (Centered overlay)
+                // Client Detail Modal - Shows for BOTH Admin and Agent users
                 AnimatedVisibility(
                     visible = uiState.selectedClient != null && !showMeetingSheet,
                     modifier = Modifier
-                        .align(Alignment.Center) // ✅ MODAL: Centered
-                        .padding(horizontal = 24.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 0.dp)
                         .zIndex(20f), 
-                    enter = scaleIn() + fadeIn(),
-                    exit = scaleOut() + fadeOut()
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                 ) {
                     uiState.selectedClient?.let { selectedClient ->
-                        AnimatedClientBottomSheet( // Functionally a modal now
+                        AnimatedClientBottomSheet(
                             client = selectedClient,
                             uiState = uiState,
                             viewModel = viewModel,
                             cameraPositionState = cameraPositionState,
-                            onClose = { viewModel.selectClient(null) },
+                            onClose = { 
+                                viewModel.selectClient(null)
+                                proximityClient = null
+                            },
                             onViewDetails = { selectedClient.id.let(onNavigateToClientDetail) },
                             onStartMeeting = {
                                 viewModel.selectClient(null)
@@ -1173,9 +1184,14 @@ fun MapScreen(
                                 showMeetingSheet = true
                                 meetingViewModel.checkActiveMeeting(selectedClient.id)
                             },
-                            meetingUiState = meetingUiState, // ✅ Pass meeting state
+                            meetingUiState = meetingUiState,
                             onQuickVisit = { status ->
                                 viewModel.updateQuickVisitStatus(selectedClient.id, status)
+                            },
+                            onStartJourney = { clientId, mode ->
+                                viewModel.startJourney(clientId, mode)
+                                viewModel.selectClient(null)
+                                proximityClient = null
                             }
                         )
                     }
@@ -1355,8 +1371,8 @@ fun MapScreen(
                     androidx.compose.material3.ExtendedFloatingActionButton(
                         onClick = { viewModel.stopClockOut() },
                         containerColor = AppTheme.colors.error,
-                        contentColor = Color.White,
-                        icon = { Icon(Icons.Default.Logout, "Clock Out") },
+                        contentColor = AppTheme.colors.onError,
+                        icon = { Icon(Icons.AutoMirrored.Filled.Logout, "Clock Out") },
                         text = { Text("Clock Out") },
                         shape = RoundedCornerShape(16.dp)
                     )
@@ -1516,8 +1532,9 @@ fun AnimatedClientBottomSheet(
         onClose: () -> Unit,
         onViewDetails: () -> Unit,
         onStartMeeting: () -> Unit,
-        meetingUiState: com.bluemix.clients_lead.features.meeting.vm.MeetingUiState, // ✅ Added
-        onQuickVisit: (String) -> Unit = {}
+        meetingUiState: com.bluemix.clients_lead.features.meeting.vm.MeetingUiState,
+        onQuickVisit: (String) -> Unit = {},
+        onStartJourney: ((String, String) -> Unit)? = null // ✅ NEW: Start Journey callback for agents
     ) {
         var showVisitStatusMenu by remember { mutableStateOf(false) }
         var isEditingAddress by remember { mutableStateOf(false) }
@@ -1766,15 +1783,16 @@ fun AnimatedClientBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // UI Rules: 
-                    // 1. Show button within 80m (with slight jitter tolerance)
+                    // 1. Show button within 50m (with slight jitter tolerance)
                     // 2. ONLY for non-admins (Agents/Users). Admins shouldn't start meetings.
                      // ✅ FIX #1: Unified 50m Rule. 
                      // Button and logic now strictly follow the 50m Proximity Shield requirement.
                     val isWithinProximity = distanceMeters <= 50.0 
                     val isLocationUnavailable = uiState.currentLocation == null
                     val canStartMeeting = isWithinProximity && !uiState.isAdmin // ✅ ADMINS BLOCKED
+                    val isAgent = !uiState.isAdmin
 
-                    // Primary: Start Meeting (Visible if 80m of the client and NOT an Admin)
+                    // Primary: Start Meeting (Visible if 50m of the client and NOT an Admin)
                     if (canStartMeeting && !isLocationUnavailable) {
                         Button(
                             onClick = onStartMeeting,
@@ -1789,6 +1807,27 @@ fun AnimatedClientBottomSheet(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Start Meeting",
+                                style = AppTheme.typography.button
+                            )
+                        }
+                    } else if (isAgent && !isLocationUnavailable && onStartJourney != null) {
+                        // ✅ NEW: Start Journey button for agents (when not within proximity)
+                        Button(
+                            onClick = { onStartJourney?.invoke(client.id, "Car") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF6366F1) // Indigo
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DirectionsCar,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Start Journey",
                                 style = AppTheme.typography.button
                             )
                         }
@@ -2079,25 +2118,35 @@ fun AnimatedClientBottomSheet(
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.background(AppTheme.colors.onSurface.copy(alpha = 0.05f), CircleShape)
+                    // ✅ FIXED: Close icon with white color and circular background
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.1f))
+                            .clickable(onClick = onClose),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
 
-                // ✅ STAT CARDS GRID (S10 Requirements)
+                // ✅ STAT CARDS GRID (3 columns - Removed Overdue)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     AgentStatCard(
                         modifier = Modifier.weight(1f),
                         label = "Visits",
                         value = "${agent.visitCount}",
-                        icon = Icons.Default.DirectionsRun,
-                        color = Color(0xFF6366F1)
+                        icon = Icons.AutoMirrored.Filled.DirectionsRun,
+                        color = AppTheme.colors.primary
                     )
                     AgentStatCard(
                         modifier = Modifier.weight(1f),
@@ -2105,13 +2154,6 @@ fun AnimatedClientBottomSheet(
                         value = "${uiState.selectedAgentVerifiedVisits}",
                         icon = Icons.Default.Verified,
                         color = Color(0xFF10B981)
-                    )
-                    AgentStatCard(
-                        modifier = Modifier.weight(1f),
-                        label = "Overdue",
-                        value = "${uiState.selectedAgentOverdueNearby}",
-                        icon = Icons.Default.Warning,
-                        color = Color(0xFFF59E0B)
                     )
                     AgentStatCard(
                         modifier = Modifier.weight(1f),
@@ -2132,19 +2174,36 @@ fun AnimatedClientBottomSheet(
                     )
                 }
 
+                // ✅ FIXED: View Details CTA Button
                 Button(
                     onClick = { onViewProfile(agent.id) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AppTheme.colors.primary,
+                        contentColor = AppTheme.colors.onPrimary
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 4.dp,
+                        pressedElevation = 8.dp
+                    )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Assignment,
+                        imageVector = Icons.Default.Info,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp),
+                        tint = AppTheme.colors.onPrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("View Full Performance History")
+                    Text(
+                        text = "View Details",
+                        style = AppTheme.typography.button,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppTheme.colors.onPrimary
+                    )
                 }
             }
         }

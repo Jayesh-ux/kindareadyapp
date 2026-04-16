@@ -232,14 +232,47 @@ fun AnimatedAgentBottomSheet(
                     androidx.compose.material3.Text(text = agent.fullName ?: "Agent", style = AppTheme.typography.h3, fontWeight = FontWeight.Bold)
                     androidx.compose.material3.Text(text = agent.smartStatus ?: "Active", style = AppTheme.typography.body2)
                 }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, null) }
+                // ✅ FIXED: Close icon with white color and circular background
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.15f))
+                        .clickable(onClick = onClose),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AgentStatCard(label = "Visits", value = "${agent.visitCount}", icon = Icons.Default.DirectionsRun, color = Color.Blue, modifier = Modifier.weight(1f))
-                AgentStatCard(label = "Battery", value = "${agent.battery ?: 0}%", icon = Icons.Default.BatteryChargingFull, color = Color.Green, modifier = Modifier.weight(1f))
+            // ✅ FIXED: 3-column layout (Visits, Verified, Battery)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AgentStatCard(label = "Visits", value = "${agent.visitCount}", icon = Icons.Default.DirectionsRun, color = Color(0xFF6366F1), modifier = Modifier.weight(1f))
+                AgentStatCard(label = "Verified", value = "${uiState.selectedAgentVerifiedVisits}", icon = Icons.Default.Verified, color = Color(0xFF10B981), modifier = Modifier.weight(1f))
+                AgentStatCard(label = "Battery", value = "${agent.battery ?: 0}%", icon = Icons.Default.BatteryChargingFull, color = Color(0xFF3B82F6), modifier = Modifier.weight(1f))
             }
-            Button(onClick = { onViewProfile(agent.id) }, modifier = Modifier.fillMaxWidth()) {
-                androidx.compose.material3.Text("View Profile")
+            // ✅ FIXED: View Details Button with proper styling
+            Button(
+                onClick = { onViewProfile(agent.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AppTheme.colors.primary,
+                    contentColor = AppTheme.colors.onPrimary
+                )
+            ) {
+                androidx.compose.material3.Text(
+                    "View Details",
+                    color = AppTheme.colors.onPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
@@ -383,5 +416,80 @@ fun AgentRosterItem(agent: com.bluemix.clients_lead.domain.repository.AgentLocat
             color = if (isSelected) AppTheme.colors.primary else AppTheme.colors.text,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
         )
+    }
+}
+
+@Composable
+fun AdminClientBottomSheet(
+    client: Client,
+    onClose: () -> Unit,
+    onViewDetails: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(AppTheme.colors.surface)
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    androidx.compose.material3.Text(
+                        text = client.name,
+                        style = AppTheme.typography.h3,
+                        color = AppTheme.colors.text,
+                        fontWeight = FontWeight.Bold
+                    )
+                    androidx.compose.material3.Text(
+                        text = "Client ID: ${client.id}",
+                        style = AppTheme.typography.label2,
+                        color = AppTheme.colors.textSecondary
+                    )
+                }
+                IconButton(onClick = onClose) {
+                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            VisitStatusIndicator(status = client.getVisitStatusColor())
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(imageVector = Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp), tint = AppTheme.colors.primary)
+                    androidx.compose.material3.Text(text = "Primary Address", style = AppTheme.typography.label1, fontWeight = FontWeight.Bold)
+                }
+                androidx.compose.material3.Text(text = client.address ?: "No address", style = AppTheme.typography.body2)
+            }
+
+            client.phone?.let { phone ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(imageVector = Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp), tint = AppTheme.colors.primary)
+                        androidx.compose.material3.Text(text = "Phone", style = AppTheme.typography.label1, fontWeight = FontWeight.Bold)
+                    }
+                    androidx.compose.material3.Text(text = phone, style = AppTheme.typography.body2)
+                }
+            }
+
+            client.email?.let { email ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(imageVector = Icons.Default.Email, contentDescription = null, modifier = Modifier.size(16.dp), tint = AppTheme.colors.primary)
+                        androidx.compose.material3.Text(text = "Email", style = AppTheme.typography.label1, fontWeight = FontWeight.Bold)
+                    }
+                    androidx.compose.material3.Text(text = email, style = AppTheme.typography.body2)
+                }
+            }
+
+            Button(onClick = onViewDetails, modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.material3.Text("View Full Details")
+            }
+        }
     }
 }

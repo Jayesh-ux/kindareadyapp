@@ -21,7 +21,8 @@ data class AdminUserManagementUiState(
     val searchResults: List<AgentLocation> = emptyList(),
     val searchQuery: String = "",
     val visibilityFilter: VisibilityFilter = VisibilityFilter.ALL,
-    val lastUpdated: Long = System.currentTimeMillis()
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val loadingUsers: Set<String> = emptySet() // ✅ Track individual toggle loading states
 )
 
 class AdminUserManagementViewModel(
@@ -103,6 +104,7 @@ class AdminUserManagementViewModel(
             
             _uiState.update { it.copy(
                 agents = updatedAgents,
+                loadingUsers = it.loadingUsers + userId, // ✅ Start loading for this user
                 searchResults = if (it.searchQuery.isEmpty()) updatedAgents else it.searchResults.map { a ->
                     if (a.id == userId) a.copy(isActive = newStatus) else a
                 }
@@ -111,6 +113,7 @@ class AdminUserManagementViewModel(
             when (val result = updateUserStatus(userId, newStatus)) {
                 is AppResult.Success -> {
                     Timber.d("✅ Status updated successfully for $userId")
+                    _uiState.update { it.copy(loadingUsers = it.loadingUsers - userId) }
                     loadUsers() 
                 }
                 is AppResult.Error -> {
@@ -118,6 +121,7 @@ class AdminUserManagementViewModel(
                     // Revert optimistic update
                     _uiState.update { it.copy(
                         agents = originalAgents,
+                        loadingUsers = it.loadingUsers - userId,
                         searchResults = if (it.searchQuery.isEmpty()) originalAgents else it.searchResults.map { a ->
                             if (a.id == userId) a.copy(isActive = !newStatus) else a
                         },

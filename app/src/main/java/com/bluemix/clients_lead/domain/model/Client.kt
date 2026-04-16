@@ -22,8 +22,32 @@ data class Client(
     val updatedAt: String,
     val lastVisitDate: String? = null,  // ISO 8601 format
     val lastVisitType: String? = null,  // ← ADDED: met_success, not_available, office_closed, phone_call
-    val lastVisitNotes: String? = null
+    val lastVisitNotes: String? = null,
+    val locationAccuracy: String? = null,  // 'exact', 'geocoded', 'approximate', 'needs_verification'
+    val locationSource: String? = null  // 'AGENT', 'ADMIN', 'LANDMARK', 'GOOGLE'
 ) {
+    /**
+     * Get location status for UI indicator (green/orange/red dot)
+     */
+    fun getLocationStatus(): LocationStatus {
+        return when {
+            // Green: has valid GPS from known source
+            locationSource in listOf("AGENT", "ADMIN", "LANDMARK", "GOOGLE") -> LocationStatus.VERIFIED
+            // Orange: needs verification
+            locationAccuracy == "needs_verification" -> LocationStatus.NEEDS_VERIFICATION
+            // Red: no GPS at all
+            latitude == null || longitude == null -> LocationStatus.MISSING
+            // Default: has coordinates but unknown source
+            else -> LocationStatus.VERIFIED
+        }
+    }
+
+    /**
+     * Check if client needs location tagging (for Tag Location button)
+     */
+    fun needsLocationTagging(): Boolean {
+        return latitude == null || longitude == null || locationAccuracy == "needs_verification"
+    }
     /**
      * Calculate distance from this client to given coordinates (in kilometers)
      * Uses Haversine formula for accurate distance calculation
@@ -168,4 +192,13 @@ enum class VisitStatus {
     RECENT,         // Within 7 days
     MODERATE,       // 7-30 days ago
     OVERDUE         // 30+ days ago
+}
+
+/**
+ * Location status for UI indicator (client list dot)
+ */
+enum class LocationStatus {
+    VERIFIED,           // Green: has valid GPS (AGENT, ADMIN, LANDMARK, GOOGLE)
+    NEEDS_VERIFICATION, // Orange: needs re-verification
+    MISSING             // Red: no GPS at all
 }

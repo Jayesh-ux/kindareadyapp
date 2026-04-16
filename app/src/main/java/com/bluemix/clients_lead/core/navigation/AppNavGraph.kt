@@ -21,6 +21,7 @@ import com.bluemix.clients_lead.core.network.SessionManager
 import com.bluemix.clients_lead.features.Clients.presentation.ClientDetailScreen
 import com.bluemix.clients_lead.features.Clients.presentation.ClientsScreen
 import com.bluemix.clients_lead.features.Clients.presentation.CreateClientScreen
+import com.bluemix.clients_lead.features.Clients.presentation.MissingClientsScreen
 import com.bluemix.clients_lead.features.auth.presentation.screens.AuthScreen
 import com.bluemix.clients_lead.features.auth.vm.SessionViewModel
 import com.bluemix.clients_lead.features.map.presentation.MapScreen
@@ -29,6 +30,7 @@ import com.bluemix.clients_lead.features.timesheet.presentation.ActivityScreen
 import com.bluemix.clients_lead.features.admin.presentation.AdminDashboardScreen
 import com.bluemix.clients_lead.features.admin.presentation.AdminJourneyScreen
 import com.bluemix.clients_lead.features.admin.presentation.AdminUserManagementScreen
+import com.bluemix.clients_lead.features.admin.presentation.AdminPinClientScreen
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import com.bluemix.clients_lead.features.*
@@ -202,7 +204,9 @@ fun AppNavHost() {
                         onNavigateToSlotExpansion = { navigationManager.navigateToAdminSlotExpansion() },
                         onNavigateToPlanUsage = { navigationManager.navigateToAdminPlanUsage() },
                         onNavigateToAgentDetail = { agentId -> navigationManager.navigateToAgentDetail(agentId) },
-                        onNavigateToMeetingLogs = { navigationManager.navigateToAdminMeetingLogs() }
+                        onNavigateToMeetingLogs = { navigationManager.navigateToAdminMeetingLogs() },
+                        onNavigateToPinClients = { navigationManager.navigateToAdminPinClients() },
+                        onNavigateToMissingClients = { navigationManager.navigateToMissingClients() }
                     )
                 }
             }
@@ -261,7 +265,10 @@ fun AppNavHost() {
             ) {
                 ClientDetailScreen(
                     clientId = args.clientId,
-                    onNavigateBack = navigationManager::navigateBack
+                    onNavigateBack = navigationManager::navigateBack,
+                    onNavigateToLandmarkSearch = { clientId, clientName ->
+                        navigationManager.navigateToLandmarkSearch(clientId, clientName)
+                    }
                 )
             }
         }
@@ -320,6 +327,28 @@ fun AppNavHost() {
                 com.bluemix.clients_lead.features.admin.presentation.AdminPlanUsageScreen(
                     onNavigateBack = navigationManager::navigateBack,
                     onNavigateToUpgrade = { navigationManager.navigateToAdminSlotExpansion() }
+                )
+            }
+        }
+
+        composable<Route.AdminPinClients> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                AdminPinClientScreen(
+                    onNavigateBack = navigationManager::navigateBack
+                )
+            }
+        }
+
+        composable<Route.MissingClients> {
+            ProtectedRoute(
+                isAuthenticated = session.isAuthenticated,
+                onNavigateToAuth = navigationManager::navigateToAuth
+            ) {
+                MissingClientsScreen(
+                    onNavigateBack = navigationManager::navigateBack
                 )
             }
         }

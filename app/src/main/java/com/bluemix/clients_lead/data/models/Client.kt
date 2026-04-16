@@ -30,5 +30,9 @@ data class ClientDto(
     @SerialName("last_visit_type")
     val lastVisitType: String? = null,  // ← THIS WAS MISSING!
     @SerialName("last_visit_notes")
-    val lastVisitNotes: String? = null
+    val lastVisitNotes: String? = null,
+    @SerialName("location_accuracy")
+    val locationAccuracy: String? = null,
+    @SerialName("location_source")
+    val locationSource: String? = null
 )

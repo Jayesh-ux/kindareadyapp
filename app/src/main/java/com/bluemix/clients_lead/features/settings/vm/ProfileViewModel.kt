@@ -143,6 +143,11 @@ class ProfileViewModel(
     }
 
     private fun loadTotalExpense() {
+        if (_uiState.value.isAdmin) {
+            Timber.d("Skipping expense load for admin user")
+            return
+        }
+        
         viewModelScope.launch {
             Timber.d("Loading total expenses")
 

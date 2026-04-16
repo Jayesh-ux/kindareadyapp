@@ -7,6 +7,10 @@ import com.bluemix.clients_lead.domain.repository.IClientRepository
 class GetClientServices(
     private val repository: IClientRepository
 ) {
-    suspend operator fun invoke(): AppResult<List<ClientService>> =
-        repository.getClientServices()
+    suspend operator fun invoke(clientId: String? = null): AppResult<List<ClientService>> =
+        if (clientId != null) {
+            repository.getClientServices(clientId)
+        } else {
+            repository.getAllClientServices()
+        }
 }

@@ -7,6 +7,8 @@ import com.bluemix.clients_lead.domain.repository.AgentLocation
 import com.bluemix.clients_lead.domain.repository.VisibilityFilter
 import com.bluemix.clients_lead.domain.usecases.GetTeamLocations
 import com.bluemix.clients_lead.domain.usecases.GetDashboardStats
+import com.bluemix.clients_lead.domain.usecases.SelfHealDatabase
+import com.bluemix.clients_lead.domain.repository.SelfHealResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +29,8 @@ data class AdminDashboardUiState(
     val activeAgentsCount: Int = 0,
     val hiddenClientsCount: Int = 0,
     val isClearingLogs: Boolean = false,
+    val isSelfHealing: Boolean = false,
+    val selfHealResult: SelfHealResult? = null,
     val lastUpdated: Long = System.currentTimeMillis(),
     val error: String? = null
 )
@@ -35,7 +39,8 @@ class AdminDashboardViewModel(
     private val getTeamLocations: GetTeamLocations,
     private val getDashboardStats: GetDashboardStats,
     private val deleteOldLocationLogs: com.bluemix.clients_lead.domain.usecases.DeleteOldLocationLogs,
-    private val retryGeocodingUseCase: com.bluemix.clients_lead.domain.usecases.RetryGeocoding
+    private val retryGeocodingUseCase: com.bluemix.clients_lead.domain.usecases.RetryGeocoding,
+    private val selfHealDatabase: SelfHealDatabase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AdminDashboardUiState())
@@ -138,6 +143,30 @@ class AdminDashboardViewModel(
             _uiState.update { it.copy(isLoading = true) }
             retryGeocodingUseCase()
             refreshDashboard()
+        }
+    }
+
+    fun selfHealClients() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSelfHealing = true, error = null, selfHealResult = null) }
+            
+            try {
+                when (val result = selfHealDatabase()) {
+                    is AppResult.Success -> {
+                        _uiState.update { 
+                            it.copy(
+                                selfHealResult = result.data
+                            )
+                        }
+                        refreshDashboard()
+                    }
+                    is AppResult.Error -> {
+                        _uiState.update { it.copy(error = "Self-heal failed: ${result.error.message}") }
+                    }
+                }
+            } finally {
+                _uiState.update { it.copy(isSelfHealing = false) }
+            }
         }
     }
 

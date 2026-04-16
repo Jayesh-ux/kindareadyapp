@@ -1,645 +1,414 @@
 package com.bluemix.clients_lead.features.Clients.presentation
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Directions
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.bluemix.clients_lead.domain.model.Client
+import com.bluemix.clients_lead.domain.model.LocationStatus
 import com.bluemix.clients_lead.features.Clients.vm.ClientDetailViewModel
-import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 import ui.AppTheme
-import ui.components.Scaffold
-import ui.components.Text
-import ui.components.topbar.TopBar
-import ui.components.topbar.TopBarDefaults
-import com.bluemix.clients_lead.features.Clients.presentation.components.LastVisitCard
+import com.google.android.gms.location.LocationServices
+import kotlinx.coroutines.launch
 
-/**
- * Client detail screen following proper ViewModel patterns.
- * ViewModel is injected without parameters, clientId is passed via loadClient().
- */
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClientDetailScreen(
     clientId: String,
     onNavigateBack: () -> Unit,
+    onNavigateToLandmarkSearch: (String, String) -> Unit = { _, _ -> },
     viewModel: ClientDetailViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    var showLocationDialog by remember { mutableStateOf(false) }
+    var pendingLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    var dialogTitle by remember { mutableStateOf("") }
+    var landmarkName by remember { mutableStateOf("") }
+    
+    // Location permission launcher
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseLocationGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        
+        if (fineLocationGranted || coarseLocationGranted) {
+            // Get current location
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            try {
+                fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                    location?.let {
+                        pendingLocation = Pair(it.latitude, it.longitude)
+                        dialogTitle = "Tag this client at your current location?"
+                        landmarkName = "Current GPS (${String.format("%.6f", it.latitude)}, ${String.format("%.6f", it.longitude)})"
+                        showLocationDialog = true
+                    }
+                }
+            } catch (e: SecurityException) {
+                // Handle exception
+            }
+        }
+    }
 
     LaunchedEffect(clientId) {
         viewModel.loadClient(clientId)
     }
 
     Scaffold(
-        modifier = Modifier.background(AppTheme.colors.background),
-        contentWindowInsets = WindowInsets(0),
         topBar = {
-            TopBar(
-                colors = TopBarDefaults.topBarColors(
-                    containerColor = AppTheme.colors.background,
-                    scrolledContainerColor = AppTheme.colors.surface
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {   // ✅ Add back button
+            TopAppBar(
+                title = { Text(uiState.client?.name ?: "Client") },
+                navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = AppTheme.colors.text
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                    Text(
-                        text = "Client Details",
-                        style = AppTheme.typography.h2,
-                        color = AppTheme.colors.text
-                    )
-
-                    var isRefreshing by remember { mutableStateOf(false) }
-                    val rotation by animateFloatAsState(
-                        targetValue = if (isRefreshing) 360f else 0f,
-                        animationSpec = tween(600),
-                        finishedListener = { isRefreshing = false },
-                        label = "refreshRotation"
-                    )
-
-                    IconButton(
-                        onClick = {
-                            isRefreshing = true
-                            viewModel.refresh()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = AppTheme.colors.text,
-                            modifier = Modifier.graphicsLayer { rotationZ = rotation }
-                        )
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.refresh() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }
-            }
+            )
         }
     ) { paddingValues ->
-        Crossfade(
-            targetState = when {
-                uiState.isLoading -> "loading"
-                uiState.error != null -> "error"
-                uiState.client != null -> "content"
-                else -> "empty"
-            },
-            animationSpec = tween(300),
-            label = "contentCrossfade"
-        ) { state ->
-            when (state) {
-                "loading" -> LoadingContent(paddingValues)
-                "error" -> ErrorContent(
-                    paddingValues = paddingValues,
-                    error = uiState.error ?: "Unknown error",
-                    onRetry = { viewModel.refresh() }
-                )
-                "content" -> uiState.client?.let { client ->
-                    AnimatedClientDetailContent(
-                        paddingValues = paddingValues,
-                        client = client,
-                        onCall = { phone ->
-                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
-                            context.startActivity(intent)
-                        },
-                        onEmail = { email ->
-                            val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email"))
-                            context.startActivity(intent)
-                        },
-                        onNavigate = { lat, lng ->
-                            val uri = Uri.parse(
-                                "https://www.google.com/maps/dir/?api=1&destination=$lat,$lng"
-                            )
-                            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                                setPackage("com.google.android.apps.maps")
-                            }
-                            context.startActivity(intent)
-                        }
-
-                    )
+        when {
+            uiState.isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun LoadingContent(paddingValues: PaddingValues) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)
-            .padding(20.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            CircularProgressIndicator(color = AppTheme.colors.primary)
-            Text(
-                text = "Loading client details...",
-                style = AppTheme.typography.body1,
-                color = AppTheme.colors.textSecondary
-            )
-        }
-    }
-}
-
-@Composable
-private fun ErrorContent(
-    paddingValues: PaddingValues,
-    error: String,
-    onRetry: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Error,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = AppTheme.colors.error
-            )
-            Text(
-                text = error,
-                style = AppTheme.typography.body1,
-                color = AppTheme.colors.error
-            )
-            Button(onClick = onRetry) {
-                Text("Retry")
+            uiState.error != null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(uiState.error ?: "Error")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { viewModel.refresh() }) { Text("Retry") }
+                    }
+                }
+            }
+            uiState.client != null -> {
+                ClientDetailContent(
+                    client = uiState.client!!,
+                    paddingValues = paddingValues,
+                    context = context,
+                    onNavigateToLandmarkSearch = onNavigateToLandmarkSearch,
+                    onTagLocation = { lat, lng, source ->
+                        viewModel.tagLocation(lat, lng, source)
+                    },
+                    onRequestLocation = {
+                        val hasFineLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        val hasCoarseLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        
+                        if (hasFineLocation || hasCoarseLocation) {
+                            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+                            try {
+                                fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                                    location?.let {
+                                        pendingLocation = Pair(it.latitude, it.longitude)
+                                        dialogTitle = "Tag this client at your current location?"
+                                        landmarkName = "Current GPS (${String.format("%.6f", it.latitude)}, ${String.format("%.6f", it.longitude)})"
+                                        showLocationDialog = true
+                                    }
+                                }
+                            } catch (e: SecurityException) {
+                                // Handle
+                            }
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        }
+                    }
+                )
             }
         }
     }
+    
+    // Location confirmation dialog
+    if (showLocationDialog && pendingLocation != null) {
+        AlertDialog(
+            onDismissRequest = { 
+                showLocationDialog = false
+                pendingLocation = null
+            },
+            title = { Text(dialogTitle) },
+            text = { Text("$landmarkName\n\nDo you want to tag this client here?") },
+            confirmButton = {
+                Button(onClick = {
+                    pendingLocation?.let { (lat, lng) ->
+                        viewModel.tagLocation(lat, lng, "AGENT")
+                    }
+                    showLocationDialog = false
+                    pendingLocation = null
+                }) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showLocationDialog = false
+                    pendingLocation = null
+                }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun AnimatedClientDetailContent(
-    paddingValues: PaddingValues,
+private fun ClientDetailContent(
     client: Client,
-    onCall: (String) -> Unit,
-    onEmail: (String) -> Unit,
-    onNavigate: (Double, Double) -> Unit
+    paddingValues: PaddingValues,
+    context: android.content.Context,
+    onNavigateToLandmarkSearch: (String, String) -> Unit,
+    onTagLocation: (Double, Double, String) -> Unit = { _, _, _ -> },
+    onRequestLocation: () -> Unit = {}
 ) {
+    val needsTagging = client.needsLocationTagging()
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(paddingValues)
-            .padding(16.dp),
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Animated Header Card
-        AnimatedHeaderCard(client = client)
-
-        LastVisitCard(
-            client = client,
-            onViewHistory = { /* Navigate to history */ },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        // Contact Information Section
-        AnimatedSection(
-            title = "Contact Information",
-            index = 1
+        // Header Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
         ) {
-            client.phone?.let { phone ->
-                AnimatedDetailRow(
-                    icon = Icons.Default.Phone,
-                    label = "Phone",
-                    value = phone,
-                    actionIcon = Icons.Default.Call,
-                    onActionClick = { onCall(phone) },
-                    index = 0
-                )
-            }
-
-            client.email?.let { email ->
-                AnimatedDetailRow(
-                    icon = Icons.Default.Email,
-                    label = "Email",
-                    value = email,
-                    actionIcon = Icons.Default.Send,
-                    onActionClick = { onEmail(email) },
-                    index = 1
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF3B82F6)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = client.name.take(2).uppercase(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(client.name, style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AssistChip(
+                        onClick = { },
+                        label = { Text(client.status.uppercase()) }
+                    )
+                    // Location status chip
+                    val locationStatus = client.getLocationStatus()
+                    val (chipColor, chipText) = when (locationStatus) {
+                        LocationStatus.VERIFIED -> Pair(Color(0xFF4CAF50), "GPS Verified")
+                        LocationStatus.NEEDS_VERIFICATION -> Pair(Color(0xFFFFA500), "Needs Verification")
+                        LocationStatus.MISSING -> Pair(Color(0xFFF44336), "No GPS")
+                    }
+                    AssistChip(
+                        onClick = { },
+                        label = { Text(chipText) },
+                        colors = AssistChipDefaults.assistChipColors(containerColor = chipColor.copy(alpha = 0.2f))
+                    )
+                }
             }
         }
 
-        // Address Information Section
-        AnimatedSection(
-            title = "Address",
-            index = 2
-        ) {
-            client.address?.let { address ->
-                AnimatedDetailRow(
-                    icon = Icons.Default.LocationOn,
-                    label = "Address",
-                    value = address,
-                    actionIcon = if (client.hasLocation && client.latitude != null && client.longitude != null) {
-                        Icons.Default.Directions
-                    } else null,
-                    onActionClick = if (client.hasLocation && client.latitude != null && client.longitude != null) {
-                        { onNavigate(client.latitude, client.longitude) }
-                    } else null,
-                    index = 0
-                )
-            }
+        // Contact Section
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Contact", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                client.phone?.let { phone ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF3B82F6))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(phone)
+                        }
+                        IconButton(onClick = {
+                            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
+                        }) {
+                            Icon(Icons.Default.Call, contentDescription = "Call")
+                        }
+                    }
+                }
 
-            if (client.hasLocation && client.latitude != null && client.longitude != null) {
-                AnimatedDetailRow(
-                    icon = Icons.Default.MyLocation,
-                    label = "Coordinates",
-                    value = "${String.format("%.6f", client.latitude)}, ${String.format("%.6f", client.longitude)}",
-                    index = 1
-                )
+                client.email?.let { email ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF3B82F6))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(email)
+                        }
+                        IconButton(onClick = {
+                            context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$email")))
+                        }) {
+                            Icon(Icons.Default.Send, contentDescription = "Email")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Location Section
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Location", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Show location source if available
+                client.locationSource?.let { source ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = when (source) {
+                                "AGENT" -> Icons.Default.Person
+                                "ADMIN" -> Icons.Default.AdminPanelSettings
+                                "LANDMARK" -> Icons.Default.Place
+                                "GOOGLE" -> Icons.Default.Cloud
+                                else -> Icons.Default.LocationOn
+                            },
+                            contentDescription = null,
+                            tint = Color(0xFF3B82F6),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Source: $source • Accuracy: ${client.locationAccuracy ?: "unknown"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                
+                client.address?.let { address ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFF3B82F6))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(address)
+                        }
+                        if (client.hasLocation && client.latitude != null && client.longitude != null) {
+                            IconButton(onClick = {
+                                val uri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${client.latitude},${client.longitude}")
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            }) {
+                                Icon(Icons.Default.Directions, contentDescription = "Navigate")
+                            }
+                        }
+                    }
+                }
+
+                if (client.hasLocation && client.latitude != null && client.longitude != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Coordinates: ${String.format("%.6f", client.latitude)}, ${String.format("%.6f", client.longitude)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
+
+                // Tag Location button - show when needs tagging
+                if (needsTagging) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "⚠️ This client needs GPS location",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFFFA500)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Tag Location button
+                    Button(
+                        onClick = onRequestLocation,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                    ) {
+                        Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Tag My Location")
+                    }
+                }
             }
         }
 
         // Notes Section
         client.notes?.let { notes ->
-            AnimatedSection(
-                title = "Notes",
-                index = 3
-            ) {
-                AnimatedNotesCard(notes = notes)
-            }
-        }
-    }
-}
-
-@Composable
-private fun AnimatedHeaderCard(client: Client) {
-    var isVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay(100)
-        isVisible = true
-    }
-
-    val scale by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0.8f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "headerScale"
-    )
-
-    val alpha by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0f,
-        animationSpec = tween(400),
-        label = "headerAlpha"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .graphicsLayer { this.alpha = alpha }
-            .clip(RoundedCornerShape(16.dp))
-            .background(AppTheme.colors.primary.copy(alpha = 0.1f))
-            .padding(24.dp)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Avatar with pulse animation
-            val infiniteTransition = rememberInfiniteTransition(label = "avatarPulse")
-            val avatarScale by infiniteTransition.animateFloat(
-                initialValue = 1f,
-                targetValue = 1.05f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(2000),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "avatarScale"
-            )
-
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .scale(avatarScale)
-                    .clip(CircleShape) // ✅ Makes it perfectly round
-                    .background(AppTheme.colors.primary),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(56.dp),
-                    tint = AppTheme.colors.onPrimary
-                )
-            }
-
-            Text(
-                text = client.name,
-                style = AppTheme.typography.h1,
-                color = AppTheme.colors.text
-            )
-
-            // Animated Status Badge
-            AnimatedStatusBadge(status = client.status)
-        }
-    }
-}
-
-@Composable
-private fun AnimatedStatusBadge(status: String) {
-    val backgroundColor by animateColorAsState(
-        targetValue = when (status) {
-            "active" -> AppTheme.colors.success
-            "inactive" -> AppTheme.colors.disabled
-            "completed" -> AppTheme.colors.tertiary
-            else -> AppTheme.colors.surface
-        },
-        animationSpec = tween(300),
-        label = "badgeBackground"
-    )
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(backgroundColor)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = status.uppercase(),
-            style = AppTheme.typography.label2,
-            color = when (status) {
-                "active" -> AppTheme.colors.onSuccess
-                "inactive" -> AppTheme.colors.onDisabled
-                "completed" -> AppTheme.colors.onTertiary
-                else -> AppTheme.colors.text
-            }
-        )
-    }
-}
-
-@Composable
-private fun AnimatedSection(
-    title: String,
-    index: Int,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    var isVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay((index * 100).toLong())
-        isVisible = true
-    }
-
-    val offsetY by animateDpAsState(
-        targetValue = if (isVisible) 0.dp else 20.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "sectionOffsetY"
-    )
-
-    val alpha by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0f,
-        animationSpec = tween(400),
-        label = "sectionAlpha"
-    )
-
-    Column(
-        modifier = Modifier
-            .offset(y = offsetY)
-            .graphicsLayer { this.alpha = alpha },
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = title,
-            style = AppTheme.typography.h3,
-            color = AppTheme.colors.text
-        )
-
-        content()
-    }
-}
-
-@Composable
-private fun AnimatedDetailRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String,
-    actionIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    onActionClick: (() -> Unit)? = null,
-    index: Int
-) {
-    var isVisible by remember { mutableStateOf(false) }
-    var isPressed by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay((index * 80).toLong())
-        isVisible = true
-    }
-
-    val scale by animateFloatAsState(
-        targetValue = when {
-            !isVisible -> 0.9f
-            isPressed -> 0.98f
-            else -> 1f
-        },
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "rowScale"
-    )
-
-    val alpha by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0f,
-        animationSpec = tween(300),
-        label = "rowAlpha"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .graphicsLayer { this.alpha = alpha }
-            .clip(RoundedCornerShape(12.dp))
-            .background(AppTheme.colors.surface)
-            .then(
-                if (onActionClick != null) {
-                    Modifier.pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                isPressed = true
-                                tryAwaitRelease()
-                                isPressed = false
-                            }
-                        )
-                    }
-                } else Modifier
-            )
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = AppTheme.colors.primary,
-                modifier = Modifier.size(24.dp)
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    style = AppTheme.typography.label2,
-                    color = AppTheme.colors.textSecondary
-                )
-                Text(
-                    text = value,
-                    style = AppTheme.typography.body1,
-                    color = AppTheme.colors.text
-                )
-            }
-
-            if (actionIcon != null && onActionClick != null) {
-                var isActionPressed by remember { mutableStateOf(false) }
-                val actionScale by animateFloatAsState(
-                    targetValue = if (isActionPressed) 0.9f else 1f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                    label = "actionScale"
-                )
-
-                IconButton(
-                    onClick = onActionClick,
-                    modifier = Modifier.scale(actionScale)
-                ) {
-                    Icon(
-                        imageVector = actionIcon,
-                        contentDescription = "Action",
-                        tint = AppTheme.colors.primary
-                    )
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Notes", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(notes)
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AnimatedNotesCard(notes: String) {
-    var isVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay(100)
-        isVisible = true
-    }
-
-    val scale by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0.95f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "notesScale"
-    )
-
-    val alpha by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0f,
-        animationSpec = tween(400),
-        label = "notesAlpha"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .graphicsLayer { this.alpha = alpha }
-            .clip(RoundedCornerShape(12.dp))
-            .background(AppTheme.colors.surface)
-            .padding(16.dp)
-    ) {
-        Text(
-            text = notes,
-            style = AppTheme.typography.body1,
-            color = AppTheme.colors.text
-        )
     }
 }

@@ -20,8 +20,10 @@ fun ClientDto.toDomain(): Client {
         createdAt = createdAt,
         updatedAt = updatedAt,
         lastVisitDate = lastVisitDate,
-        lastVisitType = lastVisitType,  // ← ADDED
-        lastVisitNotes = lastVisitNotes
+        lastVisitType = lastVisitType,
+        lastVisitNotes = lastVisitNotes,
+        locationAccuracy = locationAccuracy,
+        locationSource = locationSource
     )
 }
 

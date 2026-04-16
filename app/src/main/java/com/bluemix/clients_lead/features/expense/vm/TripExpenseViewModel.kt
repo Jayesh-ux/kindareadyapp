@@ -54,6 +54,14 @@ data class TripExpenseUiState(
     val amountSpentString: String = "", // ✅ NEW: UI-friendly string state
     val notes: String = "",
 
+    // Trip status (for lifecycle)
+    val tripStatus: String = "DRAFT", // DRAFT, IN_PROGRESS, COMPLETED
+    
+    // Leg info (for multi-leg)
+    val currentLegIndex: Int = 0,
+    val totalLegs: Int = 0,
+    val legStatus: String = "PENDING", // PENDING, IN_PROGRESS, COMPLETED
+
     // Route visualization
     val routePolyline: List<LatLng>? = null,
 
@@ -77,6 +85,10 @@ data class TripExpenseUiState(
     val error: String? = null,
     val successMessage: String? = null
 ) {
+    // Computed: can submit based on status
+    val canSubmit: Boolean
+        get() = tripStatus != "COMPLETED" && !isSubmitting && hasUnsavedChanges
+
     val hasUnsavedChanges: Boolean
         get() = startLocation != null ||
                 endLocation != null ||

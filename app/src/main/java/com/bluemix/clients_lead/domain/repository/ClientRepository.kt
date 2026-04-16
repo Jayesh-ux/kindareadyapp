@@ -91,9 +91,14 @@ interface IClientRepository {
     suspend fun getTeamLocations(): AppResult<List<AgentLocation>>
     
     /**
-     * Get all client services (Subscription/Maintenance data)
+     * Get services for a specific client
      */
-    suspend fun getClientServices(): AppResult<List<com.bluemix.clients_lead.domain.model.ClientService>>
+    suspend fun getClientServices(clientId: String): AppResult<List<com.bluemix.clients_lead.domain.model.ClientService>>
+    
+    /**
+     * Get all client services across all clients (Admin only)
+     */
+    suspend fun getAllClientServices(): AppResult<List<com.bluemix.clients_lead.domain.model.ClientService>>
     
     /**
      * Add a new client service with optional assignments
@@ -143,6 +148,42 @@ interface IClientRepository {
      * ✅ NEW: Trigger background geocoding for all clients with missing coordinates
      */
     suspend fun retryGeocoding(): AppResult<Unit>
+
+    /**
+     * Self-Heal Database: Recovery System for clients with missing GPS coordinates
+     * Falls back from agent logs -> Google Geocoding API
+     */
+    suspend fun selfHealClients(): AppResult<SelfHealResult>
+
+    /**
+     * Phase 1: Agent tags client location with their current GPS
+     */
+    suspend fun tagClientLocation(
+        clientId: String,
+        latitude: Double,
+        longitude: Double,
+        source: String = "AGENT"
+    ): AppResult<TagLocationResponse>
+
+    /**
+     * Phase 2 (Admin): Set client location manually
+     */
+    suspend fun setClientLocation(
+        clientId: String,
+        latitude: Double,
+        longitude: Double,
+        source: String = "ADMIN"
+    ): AppResult<Client>
+
+    /**
+     * Admin: Get missing locations report
+     */
+    suspend fun getMissingLocations(): AppResult<MissingLocationsResult>
+
+    /**
+     * Admin: Get location status report
+     */
+    suspend fun getLocationReport(): AppResult<LocationReport>
 }
 
 
@@ -194,4 +235,64 @@ data class AgentLocation(
 data class ClientsResult(
     val clients: List<Client>,
     val message: String? = null
+)
+
+/**
+ * Result from Self-Heal Database operation
+ */
+data class SelfHealResult(
+    val total: Int,
+    val healedByLogs: Int,
+    val healedByApi: Int,
+    val skipped: Int,
+    val failed: Int
+)
+
+/**
+ * Location report for admin dashboard
+ */
+data class LocationReport(
+    val total: Int,
+    val withGps: Int,
+    val missingGps: Int,
+    val bySource: Map<String, Int>
+)
+
+/**
+ * Tag location response
+ */
+data class TagLocationResponse(
+    val success: Boolean,
+    val message: String
+)
+
+/**
+ * Missing client data
+ */
+data class MissingClient(
+    val id: String,
+    val name: String,
+    val address: String?,
+    val phone: String?,
+    val status: String?,
+    val locationAccuracy: String?,
+    val locationSource: String?,
+    val recommendedMethod: String,
+    val recommendationReason: String,
+    val priority: Int
+)
+
+/**
+ * Missing locations result
+ */
+data class MissingLocationsResult(
+    val totalMissing: Int,
+    val breakdown: MissingBreakdown,
+    val clients: List<MissingClient>
+)
+
+data class MissingBreakdown(
+    val needsVerification: Int,
+    val completelyMissing: Int,
+    val agentVisitRecommended: Int
 )

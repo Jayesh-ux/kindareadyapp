@@ -45,7 +45,9 @@ fun AdminDashboardScreen(
     onNavigateToSlotExpansion: () -> Unit = {},
     onNavigateToPlanUsage: () -> Unit = {},
     onNavigateToAgentDetail: (String) -> Unit = {},
-    onNavigateToMeetingLogs: () -> Unit = {}
+    onNavigateToMeetingLogs: () -> Unit = {},
+    onNavigateToPinClients: () -> Unit = {},
+    onNavigateToMissingClients: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -140,7 +142,7 @@ fun AdminDashboardScreen(
                             accentColor = Color(0xFF3B82F6)
                         )
                         AdminNavCard(
-                            title = "History",
+                            title = "Journey Tracking & Reports",
                             subtitle = "Analyze past logs",
                             icon = Icons.Default.HistoryEdu,
                             onClick = { onNavigateToReports(null) },
@@ -174,23 +176,154 @@ fun AdminDashboardScreen(
 
             // Quick Actions
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val isSelfHealing = uiState.isSelfHealing
+                val selfHealResult = uiState.selfHealResult
+                val error = uiState.error
+                
                 Surface(
-                    onClick = viewModel::retryGeocoding,
+                    onClick = { 
+                        if (!isSelfHealing) {
+                            viewModel.selfHealClients()
+                        }
+                    },
+                    enabled = !isSelfHealing,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     color = AppTheme.colors.surface.copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, AppTheme.colors.outline)
+                    border = BorderStroke(1.dp, if (isSelfHealing) Color(0xFF60A5FA) else AppTheme.colors.outline)
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(Icons.Default.CloudSync, null, tint = Color(0xFF60A5FA), modifier = Modifier.size(20.dp))
-                        Column {
-                            Text("Self-Heal Database", color = AppTheme.colors.text, style = AppTheme.typography.body1, fontWeight = FontWeight.Bold)
-                            Text("Recover missing client locations", color = AppTheme.colors.textSecondary, style = AppTheme.typography.body3)
+                        if (isSelfHealing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color(0xFF60A5FA),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.CloudSync, null, tint = Color(0xFF60A5FA), modifier = Modifier.size(20.dp))
                         }
+                        Column {
+                            Text(
+                                "Self-Heal Database", 
+                                color = if (isSelfHealing) Color(0xFF60A5FA) else AppTheme.colors.text, 
+                                style = AppTheme.typography.body1, 
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (isSelfHealing) "Recovering missing coordinates..." else "Recover missing client locations", 
+                                color = AppTheme.colors.textSecondary, 
+                                style = AppTheme.typography.body3
+                            )
+                        }
+                    }
+                }
+                
+                selfHealResult?.let { result ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF10B981).copy(alpha = 0.1f),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Text(
+                                    "✅ ${result.healedByLogs} from logs", 
+                                    color = Color(0xFF10B981), 
+                                    style = AppTheme.typography.body3,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    "✅ ${result.healedByApi} via API", 
+                                    color = Color(0xFF10B981), 
+                                    style = AppTheme.typography.body3,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Text(
+                                    "⏭ ${result.skipped} skipped (no address)", 
+                                    color = Color(0xFFF59E0B), 
+                                    style = AppTheme.typography.body3,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    "❌ ${result.failed} failed", 
+                                    color = Color(0xFFEF4444), 
+                                    style = AppTheme.typography.body3,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Phase 2: Pin Missing Clients Button
+            Surface(
+                onClick = { onNavigateToPinClients() },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = AppTheme.colors.surface.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, AppTheme.colors.outline)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.Map, null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                    Column {
+                        Text(
+                            "Pin Missing Clients",
+                            color = AppTheme.colors.text,
+                            style = AppTheme.typography.body1,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Manually pin client locations on map",
+                            color = AppTheme.colors.textSecondary,
+                            style = AppTheme.typography.body3
+                        )
+                    }
+                }
+            }
+
+            // Missing GPS Clients List
+            Surface(
+                onClick = { onNavigateToMissingClients() },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = AppTheme.colors.surface.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, AppTheme.colors.outline)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.LocationOff, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
+                    Column {
+                        Text(
+                            "Missing GPS List",
+                            color = AppTheme.colors.text,
+                            style = AppTheme.typography.body1,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "View all clients without GPS",
+                            color = AppTheme.colors.textSecondary,
+                            style = AppTheme.typography.body3
+                        )
                     }
                 }
             }

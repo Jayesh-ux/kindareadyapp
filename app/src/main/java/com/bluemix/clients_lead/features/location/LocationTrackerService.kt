@@ -77,6 +77,12 @@ class LocationTrackerService : Service() {
     private val IDLE_THRESHOLD_MS = 15 * 60 * 1000L // 15 minutes
     private val IDLE_DISTANCE_THRESHOLD = 50f // meters
 
+    // Activity log throttling - only log if significant movement or time passed
+    private var lastLoggedLocation: Location? = null
+    private var lastLogTime = 0L
+    private val LOG_DISTANCE_THRESHOLD_METERS = 200f // Only log if moved >200m
+    private val LOG_TIME_THRESHOLD_MS = 5 * 60 * 1000L // Or 5 minutes passed
+
     // S5: SharedPreferences key for persisting state across restarts
     private val PREFS_NAME = "tracker_service_state"
     private val PREF_CLIENT_ID = "active_client_id"
@@ -328,19 +334,36 @@ class LocationTrackerService : Service() {
                                 else -> null
                             }
 
-                            val result = locationRepository.insertLocationLog(
-                                userId = userId,
-                                latitude = location.latitude,
-                                longitude = location.longitude,
-                                accuracy = location.accuracy.toDouble(),
-                                battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
-                                clientId = activeClientId, // ✅ Pass active client if available
-                                markActivity = currentActivity, // ✅ Tag as Traveling or At Client Site
-                                markNotes = breadcrumbNote
-                            )
-                            when (result) {
-                                is AppResult.Success -> Timber.d("✅ Saved breadcrumb point: ${result.data.id}")
-                                is AppResult.Error -> Timber.e("❌ Failed to save breadcrumb: ${result.error.message}")
+                            // ✅ Activity log throttling: Only log if >200m moved OR >5min since last log
+                            val currentTime = System.currentTimeMillis()
+                            val distanceFromLastLog = lastLoggedLocation?.let { location.distanceTo(it) } ?: Float.MAX_VALUE
+                            val timeSinceLastLog = currentTime - lastLogTime
+                            
+                            val shouldLog = lastLoggedLocation == null || 
+                                        distanceFromLastLog > LOG_DISTANCE_THRESHOLD_METERS || 
+                                        timeSinceLastLog > LOG_TIME_THRESHOLD_MS
+                            
+                            if (shouldLog) {
+                                val result = locationRepository.insertLocationLog(
+                                    userId = userId,
+                                    latitude = location.latitude,
+                                    longitude = location.longitude,
+                                    accuracy = location.accuracy.toDouble(),
+                                    battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
+                                    clientId = activeClientId, // ✅ Pass active client if available
+                                    markActivity = currentActivity, // ✅ Tag as Traveling or At Client Site
+                                    markNotes = breadcrumbNote
+                                )
+                                when (result) {
+                                    is AppResult.Success -> {
+                                        Timber.d("✅ Saved breadcrumb point: ${result.data.id}")
+                                        lastLoggedLocation = location
+                                        lastLogTime = currentTime
+                                    }
+                                    is AppResult.Error -> Timber.e("❌ Failed to save breadcrumb: ${result.error.message}")
+                                }
+                            } else {
+                                Timber.d("⏭️ Skipping log: only ${distanceFromLastLog.toInt()}m moved, ${timeSinceLastLog/60000}min elapsed")
                             }
                         }
                     }
@@ -366,8 +389,8 @@ class LocationTrackerService : Service() {
 
     suspend fun clearUserPincode() {
         try {
-            httpClient.post(ApiEndpoints.User.CLEAR_PINCODE)
-            Timber.d("Pincode cleared successfully on backend")
+            // Endpoint not implemented yet
+            Timber.d("Pincode clear not implemented")
         } catch (e: Exception) {
             Timber.e("Failed to clear pincode: ${e.message}")
         }

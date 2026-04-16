@@ -38,7 +38,7 @@ class AdminClientServicesViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             
-            when (val result = getClientServices()) {
+            when (val result = getClientServices(null)) {
                 is AppResult.Success -> {
                     val data = result.data
                     _uiState.update { 

@@ -207,39 +207,13 @@ fun ClientsScreen(
                     exit = fadeOut() + shrinkVertically()
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        // Search mode toggle
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            SearchModeButton(
-                                label = "Local",
-                                icon = Icons.Default.MyLocation,
-                                selected = uiState.searchMode == SearchMode.LOCAL,
-                                onClick = { viewModel.setSearchMode(SearchMode.LOCAL) },
-                                modifier = Modifier.weight(1f)
-                            )
-                            SearchModeButton(
-                                label = "Remote",
-                                icon = Icons.Default.Public,
-                                selected = uiState.searchMode == SearchMode.REMOTE,
-                                onClick = { viewModel.setSearchMode(SearchMode.REMOTE) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
                         // Search text field
                         TextField(
                             value = uiState.searchQuery,
                             onValueChange = { viewModel.searchClients(it) },
                             placeholder = {
                                 Text(
-                                    text = when (uiState.searchMode) {
-                                        SearchMode.LOCAL -> "Search in current area..."
-                                        SearchMode.REMOTE -> "Search pincode, city, or name..."
-                                    },
+                                    text = "Search clients by name, email, or phone...",
                                     color = Color(0xFF808080)
                                 )
                             },
@@ -290,9 +264,8 @@ fun ClientsScreen(
                     items(
                         items = listOf(
                             ClientFilter.ALL to "All",
-                            ClientFilter.ACTIVE to "Active",
-                            ClientFilter.INACTIVE to "Inactive",
-                            ClientFilter.COMPLETED to "Completed"
+                            ClientFilter.WITH_GPS to "With GPS",
+                            ClientFilter.WITHOUT_GPS to "Without GPS"
                         )
                     ) { (filter, label) ->
                         AnimatedFilterChip(
@@ -629,7 +602,7 @@ private fun AnimatedClientCard(
                     }
                 }
 
-                AnimatedLocationBadge(hasLocation = client.hasLocation)
+                AnimatedLocationBadge(client = client)
             }
 
             val arrowRotation by animateFloatAsState(
@@ -695,28 +668,38 @@ private fun AnimatedStatusIcon(status: String) {
 }
 
 @Composable
-private fun AnimatedLocationBadge(hasLocation: Boolean) {
+private fun AnimatedLocationBadge(client: Client) {
     Row(
         modifier = Modifier.padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val tint by animateColorAsState(
-            targetValue = if (hasLocation) Color(0xFF4CAF50) else Color(0xFF808080),
+        val locationStatus = client.getLocationStatus()
+        val (tint, text) = when (locationStatus) {
+            com.bluemix.clients_lead.domain.model.LocationStatus.VERIFIED -> 
+                Pair(AppTheme.colors.success, "Verified")
+            com.bluemix.clients_lead.domain.model.LocationStatus.NEEDS_VERIFICATION -> 
+                Pair(AppTheme.colors.tertiary, "Needs verification")
+            com.bluemix.clients_lead.domain.model.LocationStatus.MISSING -> 
+                Pair(AppTheme.colors.error, "No location")
+        }
+        
+        val animatedTint by animateColorAsState(
+            targetValue = tint,
             animationSpec = tween(200),
             label = "locationIconTint"
         )
 
-        Icon(
-            imageVector = if (hasLocation) Icons.Default.LocationOn else Icons.Default.LocationOff,
-            contentDescription = null,
-            modifier = Modifier.size(14.dp),
-            tint = tint
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(animatedTint, RoundedCornerShape(4.dp))
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = if (hasLocation) "Has location" else "No location",
+            text = text,
             style = AppTheme.typography.label3,
-            color = Color(0xFFB0B0B0)
+            color = AppTheme.colors.textSecondary
         )
     }
 }

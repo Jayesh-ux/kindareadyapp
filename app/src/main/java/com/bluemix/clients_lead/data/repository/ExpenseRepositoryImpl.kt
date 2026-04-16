@@ -10,6 +10,8 @@ import com.bluemix.clients_lead.data.mapper.toDomain
 import com.bluemix.clients_lead.data.models.ExpenseResponse
 import com.bluemix.clients_lead.data.models.ExpensesListResponse
 import com.bluemix.clients_lead.data.models.ReceiptUploadResponse
+import com.bluemix.clients_lead.domain.model.ActiveTrip
+import com.bluemix.clients_lead.domain.model.ActiveTripLeg
 import com.bluemix.clients_lead.domain.model.TripExpense
 import com.bluemix.clients_lead.domain.repository.ExpenseRepository
 import io.ktor.client.*
@@ -157,7 +159,83 @@ class ExpenseRepositoryImpl(
                 response["totalAmount"] ?: 0.0
             }
         }
+
+    override suspend fun getActiveTrip(agentId: String): AppResult<ActiveTrip?> =
+        withContext(Dispatchers.IO) {
+            runAppCatching(mapper = { it.toAppError() }) {
+                try {
+                    val response = httpClient.get(ApiEndpoints.Expenses.activeTrip(agentId))
+                        .body<ActiveTripResponse>()
+                    
+                    val trip = response.trip
+                    if (trip == null) {
+                        return@runAppCatching null
+                    }
+                    
+                    ActiveTrip(
+                        id = trip.id,
+                        status = trip.status,
+                        currentLegIndex = trip.currentLegIndex,
+                        startLocation = trip.startLocation,
+                        endLocation = trip.endLocation,
+                        transportMode = trip.transportMode,
+                        isMultiLeg = trip.isMultiLeg,
+                        legs = trip.legs?.map { leg ->
+                            ActiveTripLeg(
+                                id = leg.id ?: "",
+                                legNumber = leg.legNumber,
+                                startLocation = leg.startLocation ?: "",
+                                endLocation = leg.endLocation ?: "",
+                                distanceKm = leg.distanceKm,
+                                transportMode = leg.transportMode ?: "",
+                                amountSpent = leg.amountSpent,
+                                status = leg.status ?: "PENDING",
+                                notes = leg.notes
+                            )
+                        } ?: emptyList(),
+                        startTime = trip.startTime,
+                        endTime = trip.endTime
+                    )
+                } catch (e: Exception) {
+                    // No active trip - return null
+                    null
+                }
+            }
+        }
 }
+
+@Serializable
+private data class ActiveTripResponse(
+    val trip: TripDto? = null,
+    val error: String? = null
+)
+
+@Serializable
+private data class TripDto(
+    val id: String = "",
+    val status: String = "DRAFT",
+    val currentLegIndex: Int = 0,
+    val startLocation: String = "",
+    val endLocation: String = "",
+    val transportMode: String = "",
+    val isMultiLeg: Boolean = false,
+    val legs: List<LegDto>? = null,
+    val startTime: Long? = null,
+    val endTime: Long? = null
+)
+
+@Serializable
+private data class LegDto(
+    val id: String? = null,
+    val legNumber: Int = 0,
+    val startLocation: String? = null,
+    val endLocation: String? = null,
+    val distanceKm: Double = 0.0,
+    val transportMode: String? = null,
+    val amountSpent: Double = 0.0,
+    val status: String? = "PENDING",
+    val notes: String? = null
+)
 
 @Serializable
 private data class ReceiptUploadRequest(

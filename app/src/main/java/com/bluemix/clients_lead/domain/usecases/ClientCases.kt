@@ -3,6 +3,7 @@ package com.bluemix.clients_lead.domain.usecases
 import com.bluemix.clients_lead.core.common.utils.AppResult
 import com.bluemix.clients_lead.domain.model.Client
 import com.bluemix.clients_lead.domain.repository.IClientRepository
+import com.bluemix.clients_lead.domain.repository.SelfHealResult
 
 class GetAllClients(
     private val repository: IClientRepository
@@ -80,4 +81,17 @@ class RetryGeocoding(
     private val repository: IClientRepository
 ) {
     suspend operator fun invoke(): AppResult<Unit> = repository.retryGeocoding()
+}
+
+class SelfHealDatabase(
+    private val repository: IClientRepository
+) {
+    suspend operator fun invoke(): AppResult<SelfHealResult> = repository.selfHealClients()
+}
+
+class AdminPinClientLocation(
+    private val repository: IClientRepository
+) {
+    suspend operator fun invoke(clientId: String, latitude: Double, longitude: Double): AppResult<Client> =
+        repository.updateClientLocation(clientId, latitude, longitude, null)
 }

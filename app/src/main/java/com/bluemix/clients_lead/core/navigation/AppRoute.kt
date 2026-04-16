@@ -66,6 +66,9 @@ sealed class Route {
     data object AdminSlotExpansion : Route()
 
     @Serializable
+    data object AdminPinClients : Route()
+
+    @Serializable
     data object AdminPlanUsage : Route()
     
     @Serializable
@@ -73,4 +76,10 @@ sealed class Route {
 
     @Serializable
     data object AdminMeetingLogs : Route()
+
+    @Serializable
+    data class LandmarkSearch(val clientId: String, val clientName: String) : Route()
+
+    @Serializable
+    data object MissingClients : Route()
 }

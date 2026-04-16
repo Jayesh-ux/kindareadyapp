@@ -7,14 +7,18 @@ import com.bluemix.clients_lead.features.admin.vm.AdminClientServicesViewModel
 import com.bluemix.clients_lead.features.admin.vm.AdminAddServiceViewModel
 import com.bluemix.clients_lead.features.admin.vm.MeetingLogsViewModel
 import com.bluemix.clients_lead.domain.usecases.GetDashboardStats
+import com.bluemix.clients_lead.domain.usecases.GetClientsWithLocation
+import com.bluemix.clients_lead.domain.usecases.RetryGeocoding
+import com.bluemix.clients_lead.domain.usecases.SelfHealDatabase
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 import org.koin.android.ext.koin.androidContext
 
 val adminModule = module {
     factory { GetDashboardStats(get()) }
-    viewModel { AdminDashboardViewModel(get(), get(), get(), get()) }
-    viewModel { AdminJourneyViewModel(androidContext(), get(), get(), get()) }
+    factory { GetClientsWithLocation(get()) }
+    viewModel { AdminDashboardViewModel(get(), get(), get(), get(), get()) }
+    viewModel { AdminJourneyViewModel(androidContext(), get(), get(), get(), get()) }
     viewModel { AdminUserManagementViewModel(get(), get()) }
     viewModel { AdminClientServicesViewModel(get()) }
     viewModel { AdminAddServiceViewModel(get(), get(), get()) }

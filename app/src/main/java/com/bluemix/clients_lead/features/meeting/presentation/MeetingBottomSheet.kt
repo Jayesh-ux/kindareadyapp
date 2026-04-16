@@ -131,7 +131,7 @@ fun MeetingBottomSheet(
                 .align(Alignment.BottomCenter)
                 .padding(top = 80.dp)
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(Color(0xFF1A1A1A))
+                .background(AppTheme.colors.surface)
                 .clickable(
                     onClick = {},
                     indication = null,
@@ -217,7 +217,7 @@ fun MeetingBottomSheet(
                     }
                 }
 
-                // ✅ PROXIMITY WARNING (Strict Enforcement)
+                // ✅ PROXIMITY WARNING (Compact)
                 AnimatedVisibility(
                     visible = activeMeeting == null && !isWithinProximity && currentLocation != null,
                     enter = expandVertically() + fadeIn(),
@@ -227,8 +227,8 @@ fun MeetingBottomSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFFF5252).copy(alpha = 0.15f))
-                            .padding(12.dp)
+                            .background(AppTheme.colors.error.copy(alpha = 0.1f))
+                            .padding(10.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -237,13 +237,13 @@ fun MeetingBottomSheet(
                             Icon(
                                 imageVector = Icons.Default.GpsFixed,
                                 contentDescription = null,
-                                tint = Color(0xFFFF5252),
-                                modifier = Modifier.size(20.dp)
+                                tint = AppTheme.colors.error,
+                                modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "Out of Range: You must be within 50m of the client to start a meeting (Current: ${String.format("%.0f", distanceToClient ?: 0.0)}m)",
-                                style = AppTheme.typography.body2,
-                                color = Color(0xFFFF5252)
+                                text = "Out of Range: Must be within 50m (${String.format("%.0f", distanceToClient ?: 0.0)}m)",
+                                style = AppTheme.typography.label2,
+                                color = AppTheme.colors.error
                             )
                         }
                     }

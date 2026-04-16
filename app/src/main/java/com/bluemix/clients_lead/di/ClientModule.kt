@@ -1,16 +1,18 @@
 package com.bluemix.clients_lead.di
 
 import com.bluemix.clients_lead.data.repository.ClientRepositoryImpl
+import com.bluemix.clients_lead.data.repository.OCRRepository
+import com.bluemix.clients_lead.data.repository.QuickVisitRepositoryImpl
 import com.bluemix.clients_lead.domain.repository.IClientRepository
+import com.bluemix.clients_lead.domain.repository.IQuickVisitRepository
 import com.bluemix.clients_lead.domain.usecases.*
 import com.bluemix.clients_lead.features.Clients.vm.ClientDetailViewModel
 import com.bluemix.clients_lead.features.Clients.vm.ClientsViewModel
+import com.bluemix.clients_lead.features.Clients.vm.MissingClientsViewModel
+import com.bluemix.clients_lead.features.admin.vm.AdminPinClientViewModel
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
-import com.bluemix.clients_lead.data.repository.OCRRepository
-import com.bluemix.clients_lead.domain.repository.IQuickVisitRepository
-import com.bluemix.clients_lead.data.repository.QuickVisitRepositoryImpl
 
 val clientModule = module {
 
@@ -56,6 +58,8 @@ val clientModule = module {
     factory { AddClientService(repository = get()) }
     factory { AcceptClientService(repository = get()) }
     factory { RetryGeocoding(repository = get()) }
+    factory { SelfHealDatabase(repository = get()) }
+    factory { AdminPinClientLocation(repository = get()) }
     factory { GetLiveAgents(repository = get()) }
     factory { GetDailySummary(repository = get()) }
     factory { OCRRepository() }
@@ -68,19 +72,34 @@ val clientModule = module {
             tokenStorage = get(),
             getCurrentUserId = get(),
             locationTrackingStateManager = get(),
-            context = androidContext(), // ✅ FIXED: was get(), Koin has no raw Context binding
+            context = androidContext(),
             createClient = get(),
             sessionManager = get(),
             observeAuthState = get(),
-            httpClient = get()  // ✅ FIXED P2: inject shared client, avoids resource leak
+            httpClient = get()
         )
     }
 
-    // ✅ ClientDetailViewModel does NOT take clientId in constructor
-    // The clientId is passed via loadClient(clientId) method from UI
+    // ✅ ClientDetailViewModel - updated with tag location
     viewModel {
         ClientDetailViewModel(
-            getClientById = get()
+            getClientById = get(),
+            clientRepository = get()
+        )
+    }
+
+    // ✅ Missing Clients ViewModel
+    viewModel {
+        MissingClientsViewModel(
+            clientRepository = get()
+        )
+    }
+
+    // Phase 2: Admin Pin Client ViewModel
+    viewModel {
+        AdminPinClientViewModel(
+            getAllClients = get(),
+            adminPinClientLocation = get()
         )
     }
 }

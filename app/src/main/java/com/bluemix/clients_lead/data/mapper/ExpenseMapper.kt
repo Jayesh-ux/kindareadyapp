@@ -63,8 +63,11 @@ private fun String.toTransportMode(): TransportMode {
         "RICKSHAW" -> TransportMode.RICKSHAW
         "CAR" -> TransportMode.CAR
         "TAXI" -> TransportMode.TAXI
-        "FLIGHT" -> TransportMode.FLIGHT  // NEW
-        "METRO" -> TransportMode.METRO    // NEW
+        "FLIGHT" -> TransportMode.FLIGHT
+        "METRO" -> TransportMode.METRO
+        "WALK" -> TransportMode.WALK
+        "AUTO" -> TransportMode.AUTO
+        "OTHER" -> TransportMode.OTHER
         else -> TransportMode.BUS
     }
 }
@@ -77,8 +80,11 @@ private fun TransportMode.toApiString(): String {
         TransportMode.RICKSHAW -> "RICKSHAW"
         TransportMode.CAR -> "CAR"
         TransportMode.TAXI -> "TAXI"
-        TransportMode.FLIGHT -> "FLIGHT"  // NEW
-        TransportMode.METRO -> "METRO"    // NEW
+        TransportMode.FLIGHT -> "FLIGHT"
+        TransportMode.METRO -> "METRO"
+        TransportMode.WALK -> "WALK"
+        TransportMode.AUTO -> "AUTO"
+        TransportMode.OTHER -> "OTHER"
     }
 }
 

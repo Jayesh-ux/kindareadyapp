@@ -129,6 +129,27 @@ class NavigationManager(private val navController: NavController) {
     }
 
     /**
+     * Navigate to Admin Pin Clients Screen
+     */
+    fun navigateToAdminPinClients() {
+        navController.navigate(Route.AdminPinClients)
+    }
+
+    /**
+     * Navigate to Landmark Search Screen
+     */
+    fun navigateToLandmarkSearch(clientId: String, clientName: String) {
+        navController.navigate(Route.LandmarkSearch(clientId, clientName))
+    }
+
+    /**
+     * Navigate to Missing Clients Screen
+     */
+    fun navigateToMissingClients() {
+        navController.navigate(Route.MissingClients)
+    }
+
+    /**
      * Navigate back
      */
     fun navigateBack() {

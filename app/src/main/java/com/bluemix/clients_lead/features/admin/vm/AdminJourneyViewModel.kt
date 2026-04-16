@@ -3,10 +3,13 @@ package com.bluemix.clients_lead.features.admin.vm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bluemix.clients_lead.core.common.utils.AppResult
+import com.bluemix.clients_lead.domain.model.Client
 import com.bluemix.clients_lead.domain.model.LocationLog
 import com.bluemix.clients_lead.domain.repository.AgentLocation
+import com.bluemix.clients_lead.domain.usecases.GetClientsWithLocation
 import com.bluemix.clients_lead.domain.usecases.GetLocationLogsByDateRange
 import com.bluemix.clients_lead.domain.usecases.GetTeamLocations
+import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +31,17 @@ data class AdminJourneyUiState(
     val selectedDate: LocalDate = LocalDate.now(),
     val logs: List<LocationLog> = emptyList(),
     val viewMode: JourneyViewMode = JourneyViewMode.MAP,
+    val clients: List<Client> = emptyList(),
+    val selectedClient: Client? = null,
+    
+    // Agent search
+    val agentSearchQuery: String = "",
+    val filteredAgents: List<AgentLocation> = emptyList(),
+    val showAgentSearch: Boolean = false,
+    
+    // Map optimization
+    val routePolyline: List<LatLng> = emptyList(),
+    val importantMarkers: List<JourneyMarker> = emptyList(),
     
     // Stats
     val totalDistanceKm: Double = 0.0,
@@ -37,16 +51,28 @@ data class AdminJourneyUiState(
     val gpsPointCount: Int = 0,
     val totalExpenses: Double = 0.0,
     val expenses: List<com.bluemix.clients_lead.domain.model.TripExpense> = emptyList(),
-    val resolvedAddresses: Map<String, String> = emptyMap(), // ✅ NEW
+    val resolvedAddresses: Map<String, String> = emptyMap(),
     
     val error: String? = null
 )
+
+data class JourneyMarker(
+    val position: LatLng,
+    val title: String,
+    val type: MarkerType,
+    val timestamp: String? = null
+)
+
+enum class MarkerType {
+    START, END, MEETING_START, MEETING_END, OTHER
+}
 
 class AdminJourneyViewModel(
     private val context: android.content.Context, // ✅ NEW
     private val getTeamLocations: GetTeamLocations,
     private val getLocationLogsByDateRange: GetLocationLogsByDateRange,
-    private val getTripExpenses: com.bluemix.clients_lead.domain.usecases.GetTripExpensesUseCase
+    private val getTripExpenses: com.bluemix.clients_lead.domain.usecases.GetTripExpensesUseCase,
+    private val getClientsWithLocation: GetClientsWithLocation
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AdminJourneyUiState())
@@ -56,6 +82,7 @@ class AdminJourneyViewModel(
 
     init {
         loadAgents()
+        loadClients(null) // Load all clients for admin view initially
         startAutoRefresh()
     }
 
@@ -98,9 +125,40 @@ class AdminJourneyViewModel(
         }
     }
 
+    private fun loadClients(agentId: String? = null) {
+        viewModelScope.launch {
+            val assignedTo = agentId ?: ""
+            val isAdminView = agentId == null
+            
+            when (val result = getClientsWithLocation(assignedTo, isAdmin = isAdminView)) {
+                is AppResult.Success -> {
+                    _uiState.update { it.copy(clients = result.data.clients) }
+                }
+                is AppResult.Error -> {
+                    // Silently fail - clients are optional
+                }
+            }
+        }
+    }
+
+    fun selectClient(client: Client?) {
+        _uiState.update { it.copy(selectedClient = client) }
+    }
+
     fun selectAgent(agent: AgentLocation?) {
+        Timber.d("FILTER_DEBUG", "========================================")
+        Timber.d("FILTER_DEBUG", "ADMIN JOURNEY - SELECT AGENT: ${agent?.id ?: "null"}")
+        Timber.d("FILTER_DEBUG", "Logs before: ${_uiState.value.logs.size}")
+        
         _uiState.update { it.copy(selectedAgent = agent) }
+        
+        Timber.d("FILTER_DEBUG", "Calling fetchLogs()...")
         fetchLogs()
+        
+        Timber.d("FILTER_DEBUG", "Calling loadClients(${agent?.id})...")
+        loadClients(agent?.id)
+        
+        Timber.d("FILTER_DEBUG", "========================================")
     }
 
     fun selectDate(date: LocalDate) {
@@ -128,6 +186,10 @@ class AdminJourneyViewModel(
                     val logs = result.data.sortedBy { it.timestamp }
                     val stats = calculateStats(logs)
                     
+                    // ✅ IMPROVED: Process route with filtering, deduplication, smoothing
+                    val processedPolyline = processRoute(logs)
+                    val importantMarkers = extractImportantMarkers(logs)
+                    
                     // Fetch expenses
                     val expenseResult = getTripExpenses(agent.id)
                     var todayExpenses: List<com.bluemix.clients_lead.domain.model.TripExpense> = emptyList()
@@ -141,6 +203,8 @@ class AdminJourneyViewModel(
                         it.copy(
                             isLoading = false, 
                             logs = logs,
+                            routePolyline = processedPolyline,
+                            importantMarkers = importantMarkers,
                             totalDistanceKm = stats.distanceKm,
                             activeDurationMinutes = stats.durationMinutes,
                             gpsPointCount = logs.size,
@@ -170,6 +234,204 @@ class AdminJourneyViewModel(
     }
 
     private data class JourneyStats(val distanceKm: Double, val durationMinutes: Long)
+
+    /**
+     * ✅ IMPROVED: Process route with STRICT filtering to eliminate zig-zag and loops
+     * Fixes: double lines, zig-zag, triangular loops, inaccurate GPS points
+     * Includes: accuracy filter, distance filter, time filter, sudden jump filter
+     */
+    private fun processRoute(logs: List<LocationLog>): List<LatLng> {
+        if (logs.isEmpty()) return emptyList()
+        
+        // Sort by timestamp first
+        val sortedLogs = logs.sortedBy { it.timestamp }
+        
+        // Step 1: STRICT accuracy filter - only keep points where accuracy <= 30m
+        val accurateLogs = sortedLogs.filter { (it.accuracy ?: 100.0) <= 30.0 }
+        
+        if (accurateLogs.isEmpty()) {
+            Timber.w("⚠️ No accurate GPS points found (<=30m accuracy)")
+            return emptyList()
+        }
+        
+        // Step 2: STRICT distance + time filter
+        val filtered = mutableListOf<LocationLog>()
+        var lastKeptPoint: LatLng? = null
+        var lastTimestamp: Long? = null
+        
+        for (log in accurateLogs) {
+            val current = LatLng(log.latitude, log.longitude)
+            
+            // Parse timestamp - handle ISO format
+            val currentTimestamp = try {
+                java.time.Instant.parse(log.timestamp).toEpochMilli()
+            } catch (e: Exception) {
+                try {
+                    log.timestamp.toLongOrNull() ?: System.currentTimeMillis()
+                } catch (e: Exception) {
+                    System.currentTimeMillis()
+                }
+            }
+            
+            // Time-based filter: skip points less than 5 seconds apart
+            if (lastTimestamp != null) {
+                val timeDiff = currentTimestamp - lastTimestamp
+                if (timeDiff < 5000) {
+                    continue // Skip point - too soon after previous
+                }
+            }
+            
+            if (lastKeptPoint == null) {
+                filtered.add(log)
+                lastKeptPoint = current
+                lastTimestamp = currentTimestamp
+                continue
+            }
+            
+            val results = FloatArray(1)
+            android.location.Location.distanceBetween(
+                lastKeptPoint.latitude, lastKeptPoint.longitude,
+                current.latitude, current.longitude,
+                results
+            )
+            
+            val distance = results[0]
+            
+            // Skip if: too close (< 10m) OR sudden jump (> 200m indicates GPS error)
+            if (distance < 10.0) {
+                continue // Skip point - too close to previous
+            }
+            
+            if (distance > 200.0) {
+                Timber.w("⚠️ GPS jump detected: ${distance.toInt()}m - skipping point")
+                continue // Skip sudden jump - likely GPS error
+            }
+            
+            filtered.add(log)
+            lastKeptPoint = current
+            lastTimestamp = currentTimestamp
+        }
+        
+        // Step 3: Apply gentle simplification (50m threshold)
+        val simplified = simplifyRoute(filtered, 50.0f)
+        
+        Timber.d("📍 Route processed: ${logs.size} → ${accurateLogs.size} accurate → ${filtered.size} filtered → ${simplified.size} final points")
+        return simplified
+    }
+
+    /**
+     * ✅ UPDATED: Simplify route by keeping points every minDistanceMeters
+     * Reduced threshold from 200m to 50m for smoother path
+     */
+    private fun simplifyRoute(logs: List<LocationLog>, minDistanceMeters: Float): List<LatLng> {
+        if (logs.size < 2) return logs.map { LatLng(it.latitude, it.longitude) }
+        
+        val simplified = mutableListOf<LatLng>()
+        var lastPoint: LatLng? = null
+        
+        for (log in logs) {
+            val current = LatLng(log.latitude, log.longitude)
+            
+            if (lastPoint == null) {
+                simplified.add(current)
+                lastPoint = current
+                continue
+            }
+            
+            // Calculate distance from last kept point
+            val results = FloatArray(1)
+            android.location.Location.distanceBetween(
+                lastPoint.latitude, lastPoint.longitude,
+                current.latitude, current.longitude,
+                results
+            )
+            
+            if (results[0] >= minDistanceMeters) {
+                simplified.add(current)
+                lastPoint = current
+            }
+        }
+        
+        Timber.d("📍 Route simplified: ${logs.size} → ${simplified.size} points")
+        return simplified
+    }
+    
+    /**
+     * ✅ NEW: Extract only important markers (START, END, MEETING events)
+     * Reduces marker spam on map
+     */
+    private fun extractImportantMarkers(logs: List<LocationLog>): List<JourneyMarker> {
+        if (logs.isEmpty()) return emptyList()
+        
+        val markers = mutableListOf<JourneyMarker>()
+        
+        // Always add start marker
+        markers.add(JourneyMarker(
+            position = LatLng(logs.first().latitude, logs.first().longitude),
+            title = "Journey Start",
+            type = MarkerType.START,
+            timestamp = logs.first().timestamp
+        ))
+        
+        // Add meeting markers
+        logs.forEachIndexed { index, log ->
+            when (log.markActivity) {
+                "MEETING_START" -> {
+                    markers.add(JourneyMarker(
+                        position = LatLng(log.latitude, log.longitude),
+                        title = "Meeting Start",
+                        type = MarkerType.MEETING_START,
+                        timestamp = log.timestamp
+                    ))
+                }
+                "MEETING_END" -> {
+                    markers.add(JourneyMarker(
+                        position = LatLng(log.latitude, log.longitude),
+                        title = "Meeting End",
+                        type = MarkerType.MEETING_END,
+                        timestamp = log.timestamp
+                    ))
+                }
+            }
+        }
+        
+        // Always add end marker if different from start
+        val lastLog = logs.last()
+        if (markers.size == 1 || (markers.last().position.latitude != lastLog.latitude || 
+            markers.last().position.longitude != lastLog.longitude)) {
+            markers.add(JourneyMarker(
+                position = LatLng(lastLog.latitude, lastLog.longitude),
+                title = "Journey End",
+                type = MarkerType.END,
+                timestamp = lastLog.timestamp
+            ))
+        }
+        
+        Timber.d("📍 Important markers: ${markers.size}")
+        return markers
+    }
+    
+    // Agent search functions
+    fun updateAgentSearch(query: String) {
+        val filtered = if (query.isBlank()) {
+            _uiState.value.agents
+        } else {
+            _uiState.value.agents.filter { 
+                (it.fullName ?: "").contains(query, ignoreCase = true) ||
+                it.email.contains(query, ignoreCase = true)
+            }
+        }
+        _uiState.update { it.copy(agentSearchQuery = query, filteredAgents = filtered) }
+    }
+    
+    fun toggleAgentSearch(show: Boolean) {
+        _uiState.update { 
+            it.copy(
+                showAgentSearch = show,
+                filteredAgents = if (show) it.agents else emptyList()
+            )
+        }
+    }
 
     private fun calculateStats(logs: List<LocationLog>): JourneyStats {
         if (logs.size < 2) return JourneyStats(0.0, 0)

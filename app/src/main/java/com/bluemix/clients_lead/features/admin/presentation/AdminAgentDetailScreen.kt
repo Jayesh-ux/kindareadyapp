@@ -7,6 +7,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -48,12 +52,12 @@ fun AdminAgentDetailScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppTheme.colors.onPrimary)
                     }
                     Text(
                         text = "Agent Profile",
                         style = AppTheme.typography.h2,
-                        color = Color.White
+color = AppTheme.colors.onPrimary
                     )
                 }
             }
@@ -245,17 +249,17 @@ fun AdminAgentDetailScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            if (clockIn != null) {
+if (clockIn != null) {
                                 DaySummaryRow(
-                                    icon = Icons.Default.Login,
+                                    icon = Icons.AutoMirrored.Filled.Login,
                                     label = "Clock In",
                                     value = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(clockIn.timestamp),
                                     color = Color(0xFF10B981)
                                 )
                             }
-                            if (clockOut != null) {
+if (clockOut != null) {
                                 DaySummaryRow(
-                                    icon = Icons.Default.Logout,
+                                    icon = Icons.AutoMirrored.Filled.Logout,
                                     label = "Clock Out",
                                     value = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(clockOut.timestamp),
                                     color = Color(0xFFEF4444)
@@ -420,9 +424,9 @@ private fun TimelineItem(log: com.bluemix.clients_lead.domain.model.LocationLog,
     val (title, icon, iconColor) = when (log.markActivity) {
         "MEETING_START" -> Triple("Meeting Started", Icons.Default.Groups, Color(0xFF3B82F6))
         "MEETING_END" -> Triple("Meeting Ended", Icons.Default.DoneAll, Color(0xFF10B981))
-        "CLOCK_IN" -> Triple("Clocked In", Icons.Default.Login, Color(0xFF10B981))
-        "CLOCK_OUT" -> Triple("Clocked Out", Icons.Default.Logout, Color(0xFFEF4444))
-        "LOGOUT" -> Triple("Logged Out", Icons.Default.ExitToApp, Color(0xFFEF4444))
+"CLOCK_IN" -> Triple("Clocked In", Icons.AutoMirrored.Filled.Login, Color(0xFF10B981))
+        "CLOCK_OUT" -> Triple("Clocked Out", Icons.AutoMirrored.Filled.Logout, Color(0xFFEF4444))
+        "LOGOUT" -> Triple("Logged Out", Icons.AutoMirrored.Filled.ExitToApp, Color(0xFFEF4444))
         "TRAVELING" -> Triple("Traveling", Icons.Default.DirectionsCar, Color(0xFFF59E0B))
         "AT_CLIENT_SITE" -> Triple("At Client Site", Icons.Default.Store, Color(0xFF8B5CF6))
         "ON_DUTY" -> Triple("On Duty", Icons.Default.WorkOutline, Color(0xFF64748B))

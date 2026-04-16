@@ -10,6 +10,12 @@ import com.bluemix.clients_lead.domain.model.Client
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import com.bluemix.clients_lead.domain.repository.IClientRepository
 import com.bluemix.clients_lead.data.models.CreateClientRequest
+import com.bluemix.clients_lead.domain.repository.SelfHealResult
+import com.bluemix.clients_lead.domain.repository.TagLocationResponse
+import com.bluemix.clients_lead.domain.repository.MissingLocationsResult
+import com.bluemix.clients_lead.domain.repository.MissingClient
+import com.bluemix.clients_lead.domain.repository.LocationReport
+import com.bluemix.clients_lead.domain.repository.MissingBreakdown
 import io.ktor.client.*
 import io.ktor.client.request.forms.formData
 import io.ktor.client.call.*
@@ -18,6 +24,7 @@ import io.ktor.client.request.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import android.util.Log
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
@@ -70,6 +77,10 @@ class ClientRepositoryImpl(
                     parameter("limit", 2000)
                     if (isAdmin) {
                         parameter("searchMode", "remote")
+                        // When admin selects an agent, filter clients by that agent's ID
+                        if (userId.isNotEmpty()) {
+                            parameter("created_by", userId)
+                        }
                     }
                 }.body<ClientsResponse>()
 
@@ -87,9 +98,11 @@ class ClientRepositoryImpl(
     override suspend fun getClientById(clientId: String): AppResult<Client> =
         withContext(Dispatchers.IO) {
             runAppCatching(mapper ={ it.toAppError() }) {
+                Log.d("CLIENT_REPO", "📋 Fetching client by ID: $clientId")
                 val response = httpClient.get(ApiEndpoints.Clients.byId(clientId))
                     .body<SingleClientResponse>()
 
+                Log.d("CLIENT_REPO", "✅ Client response: ${response.client.name}")
                 response.client.toClientDto().toDomain()
             }
         }
@@ -270,7 +283,7 @@ class ClientRepositoryImpl(
         withContext(Dispatchers.IO) {
             runAppCatching(mapper = { it.toAppError() }) {
                 Log.d("CLIENT_REPO", "🔧 Updating service status: $serviceId -> $status")
-                httpClient.patch("${ApiEndpoints.Admin.CLIENT_SERVICES}/$serviceId/status") {
+                httpClient.patch(ApiEndpoints.Services.updateStatus(serviceId)) {
                     contentType(io.ktor.http.ContentType.Application.Json)
                     setBody(mapOf("status" to status))
                 }
@@ -278,11 +291,21 @@ class ClientRepositoryImpl(
             }
         }
 
-    override suspend fun getClientServices(): AppResult<List<com.bluemix.clients_lead.domain.model.ClientService>> =
+    override suspend fun getClientServices(clientId: String): AppResult<List<com.bluemix.clients_lead.domain.model.ClientService>> =
         withContext(Dispatchers.IO) {
             runAppCatching(mapper = { it.toAppError() }) {
-                Log.d("CLIENT_REPO", "📡 Fetching client services...")
-                val response = httpClient.get(ApiEndpoints.Admin.CLIENT_SERVICES).body<ClientServicesResponse>()
+                Log.d("CLIENT_REPO", "📡 Fetching services for client: $clientId")
+                val response = httpClient.get(ApiEndpoints.Services.clientServices(clientId)).body<ClientServicesResponse>()
+                
+                response.services.map { it.toDomain() }
+            }
+        }
+    
+    override suspend fun getAllClientServices(): AppResult<List<com.bluemix.clients_lead.domain.model.ClientService>> =
+        withContext(Dispatchers.IO) {
+            runAppCatching(mapper = { it.toAppError() }) {
+                Log.d("CLIENT_REPO", "📡 Fetching all client services...")
+                val response = httpClient.get("${ApiEndpoints.Services.BASE}/all").body<ClientServicesResponse>()
                 
                 response.services.map { it.toDomain() }
             }
@@ -299,18 +322,19 @@ class ClientRepositoryImpl(
         price: String?
     ): AppResult<Unit> = withContext(Dispatchers.IO) {
         runAppCatching(mapper = { it.toAppError() }) {
-            Log.d("CLIENT_REPO", "🔨 Adding client service: $name")
+            if (clientId == null) {
+                throw Exception("Client ID is required")
+            }
+            Log.d("CLIENT_REPO", "🔨 Adding client service: $name for client: $clientId")
             val payload = mapOf(
-                "name" to name,
-                "clientId" to clientId,
-                "center" to center,
-                "agentId" to agentId,
-                "status" to status,
+                "serviceName" to name,
+                "description" to center,
+                "status" to (status ?: "active"),
                 "startDate" to startDate,
                 "expiryDate" to expiryDate,
                 "price" to price
             )
-            httpClient.post(ApiEndpoints.Admin.CLIENT_SERVICES) {
+            httpClient.post(ApiEndpoints.Services.clientServices(clientId)) {
                 contentType(io.ktor.http.ContentType.Application.Json)
                 setBody(payload)
             }
@@ -368,6 +392,121 @@ class ClientRepositoryImpl(
                 Unit
             }
         }
+
+    override suspend fun selfHealClients(): AppResult<SelfHealResult> =
+        withContext(Dispatchers.IO) {
+            runAppCatching(mapper = { it.toAppError() }) {
+                Log.d("CLIENT_REPO", "🏥 Starting Self-Heal Database...")
+                val response = httpClient.post(ApiEndpoints.Clients.SELF_HEAL_CLIENTS).body<SelfHealResponse>()
+                Log.d("CLIENT_REPO", "✅ Self-Heal complete: ${response.healedByLogs} logs, ${response.healedByApi} API, ${response.skipped} skipped, ${response.failed} failed")
+                SelfHealResult(
+                    total = response.total,
+                    healedByLogs = response.healedByLogs,
+                    healedByApi = response.healedByApi,
+                    skipped = response.skipped,
+                    failed = response.failed
+                )
+            }
+        }
+
+    // ========== Phase 1: Agent tags GPS location ==========
+    override suspend fun tagClientLocation(
+        clientId: String,
+        latitude: Double,
+        longitude: Double,
+        source: String
+    ): AppResult<TagLocationResponse> = withContext(Dispatchers.IO) {
+        runAppCatching(mapper = { it.toAppError() }) {
+            Log.d("CLIENT_REPO", "📍 Tagging location for client: $clientId ($latitude, $longitude)")
+            
+            val request = TagLocationRequest(
+                latitude = latitude,
+                longitude = longitude,
+                source = source
+            )
+            
+            val response = httpClient.post(ApiEndpoints.Clients.tagLocation(clientId)) {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }.body<TagLocationResponseDto>()
+            
+            TagLocationResponse(
+                success = response.success,
+                message = response.message
+            )
+        }
+    }
+
+    // ========== Admin sets location ==========
+    override suspend fun setClientLocation(
+        clientId: String,
+        latitude: Double,
+        longitude: Double,
+        source: String
+    ): AppResult<Client> = withContext(Dispatchers.IO) {
+        runAppCatching(mapper = { it.toAppError() }) {
+            Log.d("CLIENT_REPO", "📍 Admin setting location for client: $clientId")
+            
+            val request = SetLocationRequest(
+                latitude = latitude,
+                longitude = longitude,
+                source = source
+            )
+            
+            val response = httpClient.post(ApiEndpoints.Admin.setClientLocation(clientId)) {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }.body<SetLocationResponse>()
+            
+            response.client.toClientDto().toDomain()
+        }
+    }
+
+    // ========== Missing Locations Report ==========
+    override suspend fun getMissingLocations(): AppResult<MissingLocationsResult> = withContext(Dispatchers.IO) {
+        runAppCatching(mapper = { it.toAppError() }) {
+            Log.d("CLIENT_REPO", "📋 Fetching missing locations report...")
+            val response = httpClient.get(ApiEndpoints.Admin.MISSING_LOCATIONS).body<MissingLocationsResponseDto>()
+            
+            MissingLocationsResult(
+                totalMissing = response.totalMissing,
+                breakdown = MissingBreakdown(
+                    needsVerification = response.breakdown.needsVerification,
+                    completelyMissing = response.breakdown.completelyMissing,
+                    agentVisitRecommended = response.breakdown.agentVisitRecommended
+                ),
+                clients = response.clients.map { dto ->
+                    MissingClient(
+                        id = dto.id,
+                        name = dto.name,
+                        address = dto.address,
+                        phone = dto.phone,
+                        status = dto.status,
+                        locationAccuracy = dto.locationAccuracy,
+                        locationSource = dto.locationSource,
+                        recommendedMethod = dto.recommendedMethod,
+                        recommendationReason = dto.recommendationReason,
+                        priority = dto.priority
+                    )
+                }
+            )
+        }
+    }
+
+    // ========== Location Report ==========
+    override suspend fun getLocationReport(): AppResult<LocationReport> = withContext(Dispatchers.IO) {
+        runAppCatching(mapper = { it.toAppError() }) {
+            Log.d("CLIENT_REPO", "📊 Fetching location report...")
+            val response = httpClient.get(ApiEndpoints.Admin.LOCATION_REPORT).body<LocationReportDto>()
+            
+            LocationReport(
+                total = response.total,
+                withGps = response.with_gps,
+                missingGps = response.missing_gps,
+                bySource = response.by_source
+            )
+        }
+    }
 }
 
 // ==================== Response Models ====================
@@ -379,6 +518,15 @@ data class DashboardStatsDto(
     val gpsVerified: Int,
     val coverage: Int,
     val hiddenClients: Int = 0
+)
+
+@Serializable
+data class SelfHealResponse(
+    val total: Int,
+    val healedByLogs: Int,
+    val healedByApi: Int,
+    val skipped: Int,
+    val failed: Int
 )
 
 @Serializable
@@ -422,7 +570,11 @@ data class BackendClient(
     val updatedAt: String? = null,
     val lastVisitDate: String? = null,
     val lastVisitType: String? = null,
-    val lastVisitNotes: String? = null
+    val lastVisitNotes: String? = null,
+    @SerialName("location_accuracy")
+    val locationAccuracy: String? = null,
+    @SerialName("location_source")
+    val locationSource: String? = null
 )
 
 @Serializable
@@ -453,7 +605,9 @@ fun BackendClient.toClientDto(): ClientDto {
         hasLocation = (this.latitude != null && this.longitude != null),
         lastVisitType = this.lastVisitType,
         lastVisitDate = this.lastVisitDate,
-        lastVisitNotes = this.lastVisitNotes
+        lastVisitNotes = this.lastVisitNotes,
+        locationAccuracy = this.locationAccuracy,
+        locationSource = this.locationSource
     )
 }
 
@@ -537,4 +691,89 @@ fun ClientServiceDto.toDomain() = com.bluemix.clients_lead.domain.model.ClientSe
     startDate = startDate,
     expiryDate = expiryDate,
     daysLeft = daysLeft
+)
+
+// ========== Phase 1: Tag Location ==========
+@Serializable
+data class TagLocationRequest(
+    val latitude: Double,
+    val longitude: Double,
+    val source: String = "AGENT"
+)
+
+@Serializable
+data class TagLocationResponseDto(
+    val success: Boolean,
+    val message: String
+)
+
+// ========== Phase 3: Landmark Search ==========
+@Serializable
+data class LandmarkSearchResponse(
+    val results: List<LandmarkDto>,
+    val cached: Boolean = false
+)
+
+@Serializable
+data class LandmarkDto(
+    val name: String,
+    val address: String,
+    val latitude: Double,
+    val longitude: Double
+)
+
+// ========== Phase 2: Admin Set Location ==========
+@Serializable
+data class SetLocationRequest(
+    val latitude: Double,
+    val longitude: Double,
+    val source: String = "ADMIN"
+)
+
+@Serializable
+data class SetLocationResponse(
+    val success: Boolean,
+    val client: BackendClient
+)
+
+// ========== Missing Locations Response ==========
+@Serializable
+data class MissingLocationsResponseDto(
+    val totalMissing: Int,
+    val breakdown: MissingBreakdownDto,
+    val clients: List<MissingClientDto>
+)
+
+@Serializable
+data class MissingBreakdownDto(
+    val needsVerification: Int,
+    val completelyMissing: Int,
+    val agentVisitRecommended: Int
+)
+
+@Serializable
+data class MissingClientDto(
+    val id: String,
+    val name: String,
+    val address: String? = null,
+    val phone: String? = null,
+    val status: String? = null,
+    @SerialName("location_accuracy")
+    val locationAccuracy: String? = null,
+    @SerialName("location_source")
+    val locationSource: String? = null,
+    @SerialName("recommended_method")
+    val recommendedMethod: String,
+    @SerialName("recommendation_reason")
+    val recommendationReason: String,
+    val priority: Int
+)
+
+// ========== Location Report ==========
+@Serializable
+data class LocationReportDto(
+    val total: Int,
+    val with_gps: Int,
+    val missing_gps: Int,
+    val by_source: Map<String, Int>
 )

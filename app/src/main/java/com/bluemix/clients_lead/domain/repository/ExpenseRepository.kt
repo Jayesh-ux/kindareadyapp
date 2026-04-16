@@ -1,6 +1,7 @@
 package com.bluemix.clients_lead.domain.repository
 
 import com.bluemix.clients_lead.core.common.utils.AppResult
+import com.bluemix.clients_lead.domain.model.ActiveTrip
 import com.bluemix.clients_lead.domain.model.TripExpense
 
 /**
@@ -58,4 +59,10 @@ interface ExpenseRepository {
      * Get total amount spent by current user
      */
     suspend fun getTotalExpense(): AppResult<Double>
+
+    /**
+     * Get active trip for current agent (for app restart recovery)
+     * @return Active trip or null if none exists
+     */
+    suspend fun getActiveTrip(agentId: String): AppResult<ActiveTrip?>
 }

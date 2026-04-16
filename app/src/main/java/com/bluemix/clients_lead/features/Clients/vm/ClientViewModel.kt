@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 
 enum class ClientFilter {
-    ALL, ACTIVE, INACTIVE, COMPLETED
+    ALL, WITH_GPS, WITHOUT_GPS
 }
 
 enum class SearchMode {
@@ -440,9 +440,8 @@ class ClientsViewModel(
     ): List<Client> {
         var filtered = when (filter) {
             ClientFilter.ALL -> clients
-            ClientFilter.ACTIVE -> clients.filter { it.status == "active" }
-            ClientFilter.INACTIVE -> clients.filter { it.status == "inactive" }
-            ClientFilter.COMPLETED -> clients.filter { it.status == "completed" }
+            ClientFilter.WITH_GPS -> clients.filter { it.hasLocation }
+            ClientFilter.WITHOUT_GPS -> clients.filter { !it.hasLocation }
         }
 
         if (query.isNotBlank()) {

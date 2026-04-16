@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,6 +42,7 @@ import ui.components.topbar.TopBar
 import ui.components.topbar.TopBarDefaults
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Dialog
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -488,6 +491,7 @@ private fun EmptyContent(paddingValues: PaddingValues, title: String, subtitle: 
 private fun AnimatedActivityContent(paddingValues: PaddingValues, logs: List<LocationLog>, viewModel: ActivityViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var expanded by remember { mutableStateOf(false) }
 
     // ✅ NEW: Trigger pagination when reaching end of list
     val shouldLoadMore = remember {
@@ -504,11 +508,101 @@ private fun AnimatedActivityContent(paddingValues: PaddingValues, logs: List<Loc
         }
     }
 
+    // ✅ Agent Selector at top
+    if (uiState.isAdmin && uiState.agents.isNotEmpty()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = true },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2C3A)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Filter by Agent",
+                                style = AppTheme.typography.label3,
+                                color = Color(0xFF9AA4B2)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = uiState.selectedAgent?.email ?: "All Agents",
+                                style = AppTheme.typography.body1,
+                                color = Color.White
+                            )
+                        }
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color.White)
+                    }
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.background(Color(0xFF1A2C3A))
+                ) {
+                    // "All Agents" option
+                    DropdownMenuItem(
+                        text = { Text("All Agents", color = Color.White) },
+                        onClick = {
+                            viewModel.selectAgent(null)
+                            expanded = false
+                        },
+                        leadingIcon = { Icon(Icons.Default.Group, contentDescription = null, tint = Color(0xFF10B981)) }
+                    )
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    // Individual agents
+                    uiState.agents.forEach { agent ->
+                        DropdownMenuItem(
+                            text = { 
+                                Column {
+                                    Text(agent.email ?: agent.fullName ?: "Unknown", color = Color.White)
+                                    Text(
+                                        "ID: ${agent.id.take(8)}...", 
+                                        style = AppTheme.typography.label3, 
+                                        color = Color(0xFF9AA4B2)
+                                    )
+                                }
+                            },
+                            onClick = {
+                                viewModel.selectAgent(agent)
+                                expanded = false
+                            },
+                            leadingIcon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981).copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = (agent.email ?: "?").take(1).uppercase(),
+                                        color = Color(0xFF10B981),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().padding(paddingValues),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (uiState.isAdmin && uiState.showAllAgents) {
             // ✅ Bifurcate by email for Admins
@@ -546,13 +640,13 @@ private fun AnimatedActivityContent(paddingValues: PaddingValues, logs: List<Loc
                 }
             }
         } else {
-            // ✅ Standard single-agent timeline
+            // ✅ Standard single-agent timeline (or filtered by selected agent)
             itemsIndexed(logs, key = { _, log -> log.id }) { index, log ->
                 TimelineLocationLogItem(log, index, index == logs.lastIndex && uiState.isEndReached, viewModel)
             }
         }
 
-        // ✅ NEW: Loading Indicator at bottom
+        // ✅ Loading Indicator at bottom
         if (uiState.isLoading && logs.isNotEmpty()) {
             item {
                 Box(
@@ -642,8 +736,8 @@ private fun AnimatedLogCard(log: LocationLog, index: Int, viewModel: ActivityVie
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(
                             imageVector = when(log.markActivity) {
-                                "CLOCK_IN"      -> Icons.Default.Login
-                                "CLOCK_OUT"     -> Icons.Default.Logout
+                                "CLOCK_IN"      -> Icons.AutoMirrored.Filled.Login
+                                "CLOCK_OUT"     -> Icons.AutoMirrored.Filled.Logout
                                 "MEETING_START" -> Icons.Default.Handshake
                                 "MEETING_END"   -> Icons.Default.DoneAll
                                 else            -> Icons.Default.LocationOn

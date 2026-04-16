@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,12 +55,12 @@ fun AdminUserManagementScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppTheme.colors.onPrimary)
                     }
                     Text(
                         text = "User Management",
                         style = AppTheme.typography.h2,
-                        color = Color.White,
+                        color = AppTheme.colors.onPrimary,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -155,6 +156,7 @@ fun AdminUserManagementScreen(
                     items(uiState.searchResults) { agent ->
                         UserCard(
                             agent = agent,
+                            uiState = uiState,
                             onToggleStatus = { viewModel.toggleUserStatus(agent.id, !agent.isActive) },
                             onClick = { onNavigateToAgentDetail(agent.id) }
                         )
@@ -168,6 +170,7 @@ fun AdminUserManagementScreen(
 @Composable
 private fun UserCard(
     agent: AgentLocation,
+    uiState: com.bluemix.clients_lead.features.admin.vm.AdminUserManagementUiState,
     onToggleStatus: () -> Unit,
     onClick: () -> Unit
 ) {
@@ -278,18 +281,29 @@ private fun UserCard(
             }
 
             // Status Toggle
+            val isUpdating = uiState.loadingUsers.contains(agent.id)
+            
             Column(horizontalAlignment = Alignment.End) {
-                Switch(
-                    checked = agent.isActive,
-                    onCheckedChange = { onToggleStatus() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFF3B82F6),
-                        uncheckedThumbColor = Color.White.copy(alpha = 0.5f),
-                        uncheckedTrackColor = Color(0xFF1E293B)
-                    ),
-                    modifier = Modifier.scale(0.8f)
-                )
+                if (isUpdating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp).padding(4.dp),
+                        strokeWidth = 2.dp,
+                        color = Color(0xFF3B82F6)
+                    )
+                } else {
+                    Switch(
+                        checked = agent.isActive,
+                        onCheckedChange = { onToggleStatus() },
+                        enabled = !uiState.isLoading,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF3B82F6),
+                            uncheckedThumbColor = Color.White.copy(alpha = 0.5f),
+                            uncheckedTrackColor = Color(0xFF1E293B)
+                        ),
+                        modifier = Modifier.scale(0.8f)
+                    )
+                }
                 Text(
                     text = if (agent.isActive) "ENABLED" else "DISABLED",
                     style = AppTheme.typography.label3,

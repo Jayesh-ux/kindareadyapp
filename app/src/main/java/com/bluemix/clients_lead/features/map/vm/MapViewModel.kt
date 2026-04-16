@@ -431,6 +431,7 @@ class MapViewModel(
             selectedAgentJourney = emptyList() // Reset journey on new selection
         ) }
         
+        // This is handled in MapScreen by observers but we clear internal logic here if needed
         agent?.let { fetchSelectedAgentJourney(it.id) }
     }
 

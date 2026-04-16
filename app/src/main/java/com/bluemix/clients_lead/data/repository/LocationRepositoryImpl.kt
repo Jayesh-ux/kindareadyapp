@@ -5,6 +5,8 @@ import com.bluemix.clients_lead.core.common.extensions.toAppError
 import com.bluemix.clients_lead.core.common.utils.AppResult
 import com.bluemix.clients_lead.core.common.utils.AppError
 import com.bluemix.clients_lead.core.network.ApiEndpoints
+import com.bluemix.clients_lead.data.local.dao.PendingLocationLogDao
+import com.bluemix.clients_lead.data.local.entity.PendingLocationLog
 import com.bluemix.clients_lead.data.mapper.toDomain
 import com.bluemix.clients_lead.data.models.LocationLogDto
 import com.bluemix.clients_lead.domain.model.LocationLog
@@ -37,37 +39,51 @@ class LocationRepositoryImpl(
         isRetry: Boolean,
         timestamp: String?
     ): AppResult<LocationLog> = withContext(Dispatchers.IO) {
-        val isOnline = true
-        
-        if (!isOnline) {
-            // ✅ OFFLINE: Buffer to Room (only if not already a retry from worker)
-            if (!isRetry) { /* Buffer locally if Dao exists */ }
-            return@withContext AppResult.Error(AppError.Network("Offline: Log buffered locally"))
-        }
-
-        runAppCatching(mapper = { it.toAppError() }) {
-            try {
-                val response = httpClient.post(ApiEndpoints.Location.LOGS) {
-                    setBody(
-                        CreateLocationRequest(
-                            latitude = latitude,
-                            longitude = longitude,
-                            accuracy = accuracy,
-                            battery = battery,
-                            clientId = clientId?.toIntOrNull(),
-                            markActivity = markActivity,
-                            markNotes = markNotes,
-                            timestamp = timestamp
-                        )
+        // Try network first
+        try {
+            val response = httpClient.post(ApiEndpoints.Location.LOGS) {
+                setBody(
+                    CreateLocationRequest(
+                        latitude = latitude,
+                        longitude = longitude,
+                        accuracy = accuracy,
+                        battery = battery,
+                        clientId = clientId?.toIntOrNull(),
+                        markActivity = markActivity,
+                        markNotes = markNotes,
+                        timestamp = timestamp
                     )
-                }.body<CreateLocationResponse>()
+                )
+            }.body<CreateLocationResponse>()
 
-                response.log.toLocationLogDto().toDomain()
-            } catch (e: Exception) {
-                // ✅ BACKEND FAIL: Buffer to Room (only if not already a retry)
-                if (!isRetry) { /* Buffer locally if Dao exists */ }
-                throw e
+            return@withContext AppResult.Success(response.log.toLocationLogDto().toDomain())
+        } catch (e: Exception) {
+            // Network/Server failed - buffer to Room for later sync
+            if (!isRetry) {
+                try {
+                    val pendingLog = PendingLocationLog(
+                        latitude = latitude,
+                        longitude = longitude,
+                        timestamp = timestamp ?: java.time.Instant.now().toString(),
+                        accuracy = accuracy,
+                        battery = battery,
+                        markActivity = markActivity,
+                        markNotes = markNotes,
+                        clientId = clientId,
+                        synced = false
+                    )
+                    
+                    // Save to Room buffer
+                    val database = com.bluemix.clients_lead.data.local.AppDatabase.getInstance(context)
+                    database.pendingLocationLogDao().insert(pendingLog)
+                    
+                    timber.log.Timber.d("✅ Log buffered to Room for later sync")
+                } catch (bufferError: Exception) {
+                    timber.log.Timber.e(bufferError, "❌ Failed to buffer log")
+                }
             }
+            
+            return@withContext AppResult.Error(AppError.Network("Offline: Log saved for sync"))
         }
     }
 

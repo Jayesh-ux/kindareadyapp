@@ -41,7 +41,9 @@ data class ActivityUiState(
     val activeDurationMinutes: Long = 0,
     val isAdmin: Boolean = false,
     val showAllAgents: Boolean = false,
+    val selectedAgent: com.bluemix.clients_lead.domain.repository.AgentLocation? = null,
     val currentLocation: com.bluemix.clients_lead.domain.repository.AgentLocation? = null,
+    val agents: List<com.bluemix.clients_lead.domain.repository.AgentLocation> = emptyList(),
     
     // Pagination
     val currentPage: Int = 1,
@@ -79,8 +81,22 @@ class ActivityViewModel(
                     showAllAgents = if (isAdmin) true else it.showAllAgents
                 ) }
                 if (isAdmin) {
+                    loadTeamAgents()
                     loadDailySummary()
                 }
+            }
+        }
+    }
+
+    private fun loadTeamAgents() {
+        viewModelScope.launch {
+            Timber.d("LOAD_TEAM_AGENTS: Fetching team locations...")
+            val result = getTeamLocations()
+            if (result is com.bluemix.clients_lead.core.common.utils.AppResult.Success) {
+                Timber.d("LOAD_TEAM_AGENTS: Received ${result.data.size} agents")
+                _uiState.update { it.copy(agents = result.data) }
+            } else {
+                Timber.d("LOAD_TEAM_AGENTS: Failed to load agents")
             }
         }
     }
@@ -137,10 +153,34 @@ class ActivityViewModel(
     }
 
     fun toggleAllAgents() {
-        _uiState.update { it.copy(showAllAgents = !it.showAllAgents, logs = emptyList(), currentPage = 1, isEndReached = false) }
+        _uiState.update { it.copy(showAllAgents = !it.showAllAgents, logs = emptyList(), currentPage = 1, isEndReached = false, selectedAgent = null) }
         viewModelScope.launch {
             loadDailySummary(isRefresh = true)
         }
+    }
+
+    fun selectAgent(agent: com.bluemix.clients_lead.domain.repository.AgentLocation?) {
+        Timber.d("========================================")
+        Timber.d("AGENT_SELECTED: ${agent?.id}")
+        Timber.d("AGENT_EMAIL: ${agent?.email}")
+        Timber.d("Total Logs before filter: ${_uiState.value.logs.size}")
+        
+        _uiState.update { it.copy(
+            selectedAgent = agent, 
+            showAllAgents = agent == null, 
+            logs = emptyList(), 
+            currentPage = 1, 
+            isEndReached = false
+        ) }
+        
+        Timber.d("State updated - selectedAgent: ${_uiState.value.selectedAgent?.id}")
+        Timber.d("showAllAgents: ${_uiState.value.showAllAgents}")
+        
+        viewModelScope.launch {
+            Timber.d("LOGS_RELOADED for agent: ${agent?.id}")
+            loadDailySummary(isRefresh = true)
+        }
+        Timber.d("========================================")
     }
 
     override fun onCleared() {
@@ -173,22 +213,46 @@ class ActivityViewModel(
             var baseDistance = if (isRefresh) 0.0 else _uiState.value.totalDistanceKm
             var baseDuration = if (isRefresh) 0L else _uiState.value.activeDurationMinutes
 
-            val lRes = if (_uiState.value.showAllAgents && _uiState.value.isAdmin) {
-                getLocationLogsByDateRange("all", today, today, limit = pageSize, page = pageToLoad)
-            } else {
-                getLocationLogsByDateRange(userId, today, today, limit = pageSize, page = pageToLoad)
+            val lRes = when {
+                // If specific agent is selected, fetch logs for that agent
+                _uiState.value.selectedAgent != null -> {
+                    Timber.d("FILTER_DEBUG", "Fetching logs for selected agent: ${_uiState.value.selectedAgent?.id}")
+                    getLocationLogsByDateRange(_uiState.value.selectedAgent!!.id, today, today, limit = pageSize, page = pageToLoad)
+                }
+                // If showAllAgents is enabled (admin wants all logs), use "all"
+                _uiState.value.showAllAgents && _uiState.value.isAdmin -> {
+                    Timber.d("FILTER_DEBUG", "Fetching all agent logs (showAllAgents=true)")
+                    getLocationLogsByDateRange("all", today, today, limit = pageSize, page = pageToLoad)
+                }
+                // Otherwise, fetch current user's logs
+                else -> {
+                    Timber.d("FILTER_DEBUG", "Fetching current user logs: $userId")
+                    getLocationLogsByDateRange(userId, today, today, limit = pageSize, page = pageToLoad)
+                }
             }
 
             if (lRes is AppResult.Success) {
-                aggregatedLogs.addAll(lRes.data)
+                val fetchedLogs = lRes.data
+                Timber.d("FILTER_DEBUG", "API returned ${fetchedLogs.size} logs")
+                
+                // Apply frontend filtering as backup (in case API returns more)
+                val filteredLogs = if (_uiState.value.selectedAgent != null) {
+                    fetchedLogs.filter { it.userId == _uiState.value.selectedAgent?.id }
+                } else {
+                    fetchedLogs
+                }
+                
+                Timber.d("FILTER_DEBUG", "Total Logs after filter: ${filteredLogs.size}")
+                
+                aggregatedLogs.addAll(filteredLogs)
                 if (isRefresh) {
                     baseDistance = LocationUtils.calculateTotalDistanceKm(lRes.data)
                     baseDuration = LocationUtils.calculateActiveDurationMinutes(lRes.data)
                 }
                 
-                val isEnd = lRes.data.size < pageSize
+                val isEnd = filteredLogs.size < pageSize
                 _uiState.update { it.copy(
-                    logs = if (isRefresh) lRes.data else it.logs + lRes.data,
+                    logs = if (isRefresh) filteredLogs else it.logs + filteredLogs,
                     totalDistanceKm = baseDistance,
                     activeDurationMinutes = baseDuration,
                     currentPage = pageToLoad + 1,
@@ -196,8 +260,10 @@ class ActivityViewModel(
                     isLoading = false
                 ) }
                 
+                Timber.d("FILTER_DEBUG", "State updated. Total logs in state: ${_uiState.value.logs.size}")
+                
                 // Only resolve addresses for the new batch to save cycles
-                resolveAddresses(lRes.data)
+                resolveAddresses(filteredLogs)
             } else if (lRes is AppResult.Error) {
                 _uiState.update { it.copy(isLoading = false, error = (lRes as AppResult.Error).error.message) }
             }
@@ -270,7 +336,7 @@ class ActivityViewModel(
 
     fun loadServices() {
         viewModelScope.launch {
-            when (val result = getClientServices()) {
+            when (val result = getClientServices(null)) {
                 is AppResult.Success -> {
                     _uiState.update { it.copy(services = result.data) }
                 }

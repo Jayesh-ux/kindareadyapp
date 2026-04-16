@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Store
@@ -39,6 +43,7 @@ import com.google.maps.android.compose.Circle
 import com.google.maps.android.compose.rememberMarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.bluemix.clients_lead.domain.model.LocationLog
+import com.bluemix.clients_lead.domain.model.Client
 import com.bluemix.clients_lead.domain.repository.AgentLocation
 import com.bluemix.clients_lead.features.admin.vm.AdminJourneyViewModel
 import com.bluemix.clients_lead.features.admin.vm.JourneyViewMode
@@ -91,12 +96,12 @@ fun AdminJourneyScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = AppTheme.colors.onPrimary)
                     }
                     Text(
                         text = "Journey Tracking & Reports",
                         style = AppTheme.typography.h2,
-                        color = Color.White,
+                        color = AppTheme.colors.onPrimary,
                         modifier = Modifier.weight(1f)
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -138,8 +143,8 @@ fun AdminJourneyScreen(
             // Selection Controls Section
             item {
                 SelectionCard(
+                    viewModel = viewModel,
                     uiState = uiState,
-                    onSelectAgent = { viewModel.selectAgent(it) },
                     onSelectDate = { showDatePicker = true },
                     onViewModeChange = { viewModel.setViewMode(it) }
                 )
@@ -153,7 +158,7 @@ fun AdminJourneyScreen(
             // Main Content Area (Map or Summary)
             item {
                 when (uiState.viewMode) {
-                    JourneyViewMode.MAP -> MapSection(uiState) { mapReceivingTouch ->
+                    JourneyViewMode.MAP -> MapSection(uiState, viewModel) { mapReceivingTouch ->
                         isScrollEnabled = !mapReceivingTouch
                     }
                     JourneyViewMode.SUMMARY -> SummarySection(uiState)
@@ -230,8 +235,8 @@ private fun AgentTab(
 
 @Composable
 private fun SelectionCard(
+    viewModel: AdminJourneyViewModel,
     uiState: com.bluemix.clients_lead.features.admin.vm.AdminJourneyUiState,
-    onSelectAgent: (AgentLocation) -> Unit,
     onSelectDate: () -> Unit,
     onViewModeChange: (JourneyViewMode) -> Unit
 ) {
@@ -241,23 +246,152 @@ private fun SelectionCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // Agent Selector Dropdown-style
+            // ✅ NEW: Searchable Agent Selector
             Column {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Text("Select Agent", style = AppTheme.typography.label3, color = Color.Gray)
+                Spacer(Modifier.height(4.dp))
+                
+                // Search button to open modal
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1E293B))
+                        .clickable { viewModel.toggleAgentSearch(true) }
+                        .padding(12.dp)
                 ) {
-                    items(uiState.agents) { agent ->
-                        AgentTab(
-                            agent = agent,
-                            isSelected = uiState.selectedAgent?.id == agent.id,
-                            onClick = { onSelectAgent(agent) }
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = uiState.selectedAgent?.fullName ?: "Tap to search agent...",
+                                color = if (uiState.selectedAgent != null) Color.White else Color.Gray,
+                                style = AppTheme.typography.body1
+                            )
+                            if (uiState.selectedAgent != null) {
+                                Text(
+                                    text = uiState.selectedAgent.email,
+                                    color = Color.Gray,
+                                    style = AppTheme.typography.body2
+                                )
+                            }
+                        }
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray)
                     }
+                }
+                
+                // Agent Search Modal
+                if (uiState.showAgentSearch) {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.toggleAgentSearch(false) },
+                        containerColor = AppTheme.colors.surface,
+                        titleContentColor = AppTheme.colors.text,
+                        textContentColor = AppTheme.colors.textSecondary,
+                        title = { Text("Select Agent") },
+                        text = {
+                            Column {
+                                // Search Input
+                                OutlinedTextField(
+                                    value = uiState.agentSearchQuery,
+                                    onValueChange = { viewModel.updateAgentSearch(it) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { 
+                                        Text(
+                                            "Search by name or email...",
+                                            color = AppTheme.colors.textSecondary
+                                        ) 
+                                    },
+                                    leadingIcon = { 
+                                        Icon(
+                                            Icons.Default.Search, 
+                                            null,
+                                            tint = AppTheme.colors.textSecondary
+                                        ) 
+                                    },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = Color(0xFF1A2C3A),
+                                        unfocusedContainerColor = Color(0xFF1A2C3A),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        cursorColor = Color.White,
+                                        focusedBorderColor = AppTheme.colors.primary,
+                                        unfocusedBorderColor = AppTheme.colors.outline
+                                    )
+                                )
+                                
+                                Spacer(Modifier.height(8.dp))
+                                
+                                // Agent List
+                                LazyColumn(
+                                    modifier = Modifier.heightIn(max = 300.dp)
+                                ) {
+                                    val displayAgents = if (uiState.agentSearchQuery.isBlank()) {
+                                        uiState.agents
+                                    } else {
+                                        uiState.filteredAgents
+                                    }
+                                    
+items(displayAgents) { agent ->
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                                .clickable {
+                                                    viewModel.selectAgent(agent)
+                                                    viewModel.toggleAgentSearch(false)
+                                                },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = Color(0xFF1A2C3A)
+                                            )
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(12.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(40.dp)
+                                                        .clip(CircleShape)
+                                                        .background(AppTheme.colors.primary),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = (agent.fullName ?: "?").take(1).uppercase(),
+                                                        color = AppTheme.colors.onPrimary,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                                Spacer(Modifier.width(12.dp))
+                                                Column {
+                                                    Text(
+                                                        text = agent.fullName ?: "Agent",
+                                                        color = Color.White
+                                                    )
+                                                    Text(
+                                                        text = agent.email,
+                                                        color = Color(0xFF9AA4B2)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { viewModel.toggleAgentSearch(false) }) {
+                                Text("Close", color = AppTheme.colors.primary)
+                            }
+                        }
+                    )
                 }
             }
 
-            // ✅ NEW: Live Status Badge for selected agent
+            // Live Status Badge for selected agent
             uiState.selectedAgent?.let { agent ->
                 val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
                 if (isOnline) {
@@ -421,6 +555,7 @@ private fun StatCard(label: String, value: String, subtext: String, icon: ImageV
 @Composable
 private fun MapSection(
     uiState: com.bluemix.clients_lead.features.admin.vm.AdminJourneyUiState,
+    viewModel: AdminJourneyViewModel,
     onMapInteraction: (Boolean) -> Unit
 ) {
     // ✅ Pulsing Animation for Live Tracking
@@ -446,14 +581,17 @@ private fun MapSection(
 
     val context = LocalContext.current
 
-    val points = uiState.logs.map { LatLng(it.latitude, it.longitude) }
+    // ✅ NEW: Use simplified route polyline instead of all points
+    val routePoints = uiState.routePolyline.ifEmpty { uiState.logs.map { LatLng(it.latitude, it.longitude) } }
+    val importantMarkers = uiState.importantMarkers
+    
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(DefaultLocation, 12f)
     }
 
-    LaunchedEffect(points) {
-        if (points.isNotEmpty()) {
-            cameraPositionState.position = CameraPosition.fromLatLngZoom(points.first(), 14f)
+    LaunchedEffect(routePoints) {
+        if (routePoints.isNotEmpty()) {
+            cameraPositionState.position = CameraPosition.fromLatLngZoom(routePoints.first(), 14f)
         }
     }
 
@@ -479,92 +617,74 @@ private fun MapSection(
                 uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = true),
                 properties = MapProperties(isMyLocationEnabled = true)
             ) {
-                if (points.isNotEmpty()) {
+                // ✅ REMOVED: Client markers (was causing lag)
+                // ✅ REMOVED: All GPS point markers (was causing marker spam)
+
+                // 📍 Only draw simplified route polyline
+                if (routePoints.isNotEmpty()) {
                     Polyline(
-                        points = points,
+                        points = routePoints,
                         color = Color(0xFF3B82F6),
                         width = 8f,
                         geodesic = true,
                         jointType = com.google.android.gms.maps.model.JointType.ROUND
                     )
 
-                    // 🏁 Journey Markers
-                    uiState.logs.forEachIndexed { index, log ->
-                        val position = LatLng(log.latitude, log.longitude)
-                        
-                        // Start/End Markers
-                        if (index == 0) {
-                            Marker(
-                                state = rememberMarkerState(position = position),
-                                title = "Journey Start",
-                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
-                            )
-                        } else if (index == uiState.logs.size - 1) {
-                             Marker(
-                                state = rememberMarkerState(position = position),
-                                title = "Journey End",
-                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
-                            )
+                    // 🏁 Only important journey markers
+                    importantMarkers.forEach { marker ->
+                        val markerColor = when (marker.type) {
+                            com.bluemix.clients_lead.features.admin.vm.MarkerType.START -> BitmapDescriptorFactory.HUE_GREEN
+                            com.bluemix.clients_lead.features.admin.vm.MarkerType.END -> BitmapDescriptorFactory.HUE_RED
+                            com.bluemix.clients_lead.features.admin.vm.MarkerType.MEETING_START -> BitmapDescriptorFactory.HUE_AZURE
+                            com.bluemix.clients_lead.features.admin.vm.MarkerType.MEETING_END -> BitmapDescriptorFactory.HUE_VIOLET
+                            com.bluemix.clients_lead.features.admin.vm.MarkerType.OTHER -> BitmapDescriptorFactory.HUE_ORANGE
                         }
-                        
-                        // Activity Waypoints
-                        if (!log.markActivity.isNullOrBlank() && log.markActivity != "TRAVELING") {
-                            val activityIcon = when(log.markActivity) {
-                                "MEETING_START" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_start)
-                                "MEETING_END" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_meeting_end)
-                                "CLOCK_IN" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
-                                "CLOCK_OUT", "LOGOUT", "JOURNEY_STOP" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_stop)
-                                "JOURNEY_START", "AT_CLIENT_SITE" -> MapUtils.vectorToBitmap(context, R.drawable.ic_marker_start)
-                                else -> null
-                            } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
-                            
-                            Marker(
-                                state = rememberMarkerState(position = position),
-                                title = log.markActivity.replace("_", " "),
-                                snippet = log.markNotes ?: "At ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(log.timestamp)}",
-                                icon = activityIcon
-                            )
-                        }
+                        Marker(
+                            state = rememberMarkerState(position = marker.position),
+                            title = marker.title,
+                            icon = BitmapDescriptorFactory.defaultMarker(markerColor),
+                            snippet = marker.timestamp
+                        )
                     }
+                }
 
-                    // 📍 Live Agent Position
-                    val isToday = uiState.selectedDate == java.time.LocalDate.now()
-                    if (isToday) {
-                        uiState.selectedAgent?.let { agent ->
-                            val lat = agent.latitude
-                            val lng = agent.longitude
-                            if (lat != null && lng != null) {
-                                val livePos = LatLng(lat, lng)
-                                val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
-                                
-                                if (isOnline) {
-                                    Circle(
-                                        center = livePos,
-                                        radius = pulseSize.toDouble(),
-                                        fillColor = Color(0xFF00BCD4).copy(alpha = pulseAlpha),
-                                        strokeColor = Color(0xFF00BCD4).copy(alpha = pulseAlpha),
-                                        strokeWidth = 2f
-                                    )
-                                }
-                                
-                                Marker(
-                                    state = rememberMarkerState(position = livePos),
-                                    title = "Current Position (${agent.activity ?: "Live"})",
-                                    snippet = if (isOnline) "Active Now" else "Last seen ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}",
-                                    icon = if (isOnline) {
-                                        MapUtils.vectorToBitmap(context, R.drawable.ic_marker_live)
-                                    } else {
-                                        MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
-                                    } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN),
-                                    zIndex = 20f 
+                // Live Agent Position (only for today)
+                val isToday = uiState.selectedDate == java.time.LocalDate.now()
+                if (isToday) {
+                    uiState.selectedAgent?.let { agent ->
+                        val lat = agent.latitude
+                        val lng = agent.longitude
+                        if (lat != null && lng != null) {
+                            val livePos = LatLng(lat, lng)
+                            val isOnline = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.isRecent(agent.timestamp)
+                            
+                            if (isOnline) {
+                                Circle(
+                                    center = livePos,
+                                    radius = pulseSize.toDouble(),
+                                    fillColor = Color(0xFF00BCD4).copy(alpha = pulseAlpha),
+                                    strokeColor = Color(0xFF00BCD4).copy(alpha = pulseAlpha),
+                                    strokeWidth = 2f
                                 )
                             }
+                            
+                            Marker(
+                                state = rememberMarkerState(position = livePos),
+                                title = "Current Position (${agent.activity ?: "Live"})",
+                                snippet = if (isOnline) "Active Now" else "Last seen ${com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatLastSeen(agent.timestamp)}",
+                                icon = if (isOnline) {
+                                    MapUtils.vectorToBitmap(context, R.drawable.ic_marker_live)
+                                } else {
+                                    MapUtils.vectorToBitmap(context, R.drawable.ic_marker_clock_in)
+                                } ?: BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN),
+                                zIndex = 20f 
+                            )
                         }
                     }
                 }
             }
 
-            // ✅ VISUAL GUIDE: Persistent Legend Overlay
+            // Persistent Legend Overlay
             Box(
                 modifier = Modifier
                     .padding(12.dp)
@@ -869,9 +989,9 @@ private fun JourneyLogCard(log: LocationLog, uiState: com.bluemix.clients_lead.f
                 val (title, icon, iconColor) = when (log.markActivity) {
                     "MEETING_START" -> Triple("Meeting Started", Icons.Default.Groups, Color(0xFF3B82F6))
                     "MEETING_END" -> Triple("Meeting Ended", Icons.Default.DoneAll, Color(0xFF10B981))
-                    "CLOCK_IN" -> Triple("Clocked In", Icons.Default.Login, Color(0xFF10B981))
-                    "CLOCK_OUT" -> Triple("Clocked Out", Icons.Default.Logout, Color(0xFFEF4444))
-                    "LOGOUT" -> Triple("Logged Out", Icons.Default.ExitToApp, Color(0xFFEF4444))
+                    "CLOCK_IN" -> Triple("Clocked In", Icons.AutoMirrored.Filled.Login, Color(0xFF10B981))
+                    "CLOCK_OUT" -> Triple("Clocked Out", Icons.AutoMirrored.Filled.Logout, Color(0xFFEF4444))
+                    "LOGOUT" -> Triple("Logged Out", Icons.AutoMirrored.Filled.ExitToApp, Color(0xFFEF4444))
                     "TRAVELING" -> Triple("Traveling", Icons.Default.DirectionsCar, Color(0xFF6B7280))
                     "AT_CLIENT_SITE" -> Triple("At Client Site", Icons.Default.Store, Color(0xFF8B5CF6))
                     "JOURNEY_START" -> Triple("Journey Started", Icons.Default.PlayArrow, Color(0xFF3B82F6))

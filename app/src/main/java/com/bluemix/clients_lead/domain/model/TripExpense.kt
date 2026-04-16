@@ -28,7 +28,10 @@ enum class TransportMode {
     CAR,
     TAXI,
     FLIGHT,
-    METRO
+    METRO,
+    WALK,
+    AUTO,
+    OTHER
 }
 
 // NEW: Individual leg of a multi-leg journey

@@ -6,6 +6,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -213,15 +214,19 @@ private fun AnimatedProfileContent(
             onEditName = if (uiState.isAdmin) onEditName else null
         )
 
-        AnimatedTotalExpenseCard(
-            totalSpent = uiState.totalSpent
-        )
-
-        AnimatedSection(title = "Settings", index = 1) {
-            AnimatedTrackingToggle(
-                isEnabled = uiState.isTrackingEnabled,
-                onToggle = onToggleTracking
+        if (!uiState.isAdmin) {
+            AnimatedTotalExpenseCard(
+                totalSpent = uiState.totalSpent
             )
+        }
+
+        if (!uiState.isAdmin) {
+            AnimatedSection(title = "Settings", index = 1) {
+                AnimatedTrackingToggle(
+                    isEnabled = uiState.isTrackingEnabled,
+                    onToggle = onToggleTracking
+                )
+            }
         }
 
         AnimatedSection(title = "Account", index = 2) {
@@ -765,7 +770,7 @@ private fun AnimatedLogoutDialog(
             tonalElevation = 0.dp,
             icon = {
                 Icon(
-                    imageVector = Icons.Default.Logout,
+                    imageVector = Icons.AutoMirrored.Filled.Logout,
                     contentDescription = null,
                     tint = AppTheme.colors.error,
                     modifier = Modifier.size(32.dp)
