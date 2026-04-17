@@ -58,7 +58,6 @@ val clientModule = module {
     factory { AddClientService(repository = get()) }
     factory { AcceptClientService(repository = get()) }
     factory { RetryGeocoding(repository = get()) }
-    factory { SelfHealDatabase(repository = get()) }
     factory { AdminPinClientLocation(repository = get()) }
     factory { GetLiveAgents(repository = get()) }
     factory { GetDailySummary(repository = get()) }

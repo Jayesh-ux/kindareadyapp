@@ -466,7 +466,9 @@ class ClientRepositoryImpl(
     override suspend fun getMissingLocations(): AppResult<MissingLocationsResult> = withContext(Dispatchers.IO) {
         runAppCatching(mapper = { it.toAppError() }) {
             Log.d("CLIENT_REPO", "📋 Fetching missing locations report...")
+Log.d("CLIENT_REPO", "📡 URL: ${ApiEndpoints.BASE_URL}${ApiEndpoints.Admin.MISSING_LOCATIONS}")
             val response = httpClient.get(ApiEndpoints.Admin.MISSING_LOCATIONS).body<MissingLocationsResponseDto>()
+            Log.d("CLIENT_REPO", "✅ Response received - totalMissing: ${response.totalMissing}, clients: ${response.clients.size}")
             
             MissingLocationsResult(
                 totalMissing = response.totalMissing,

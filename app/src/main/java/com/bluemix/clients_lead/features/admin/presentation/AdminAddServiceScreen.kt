@@ -35,8 +35,8 @@ fun AdminAddServiceScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showClientDialog by remember { mutableStateOf(false) }
-    var showAgentDialog by remember { mutableStateOf(false) }
+    val showClientDialog = remember { mutableStateOf(false) }
+    val showAgentDialog = remember { mutableStateOf(false) }
     
     LaunchedEffect(uiState.isSuccess) {
         if (uiState.isSuccess) {
@@ -111,25 +111,22 @@ fun AdminAddServiceScreen(
                 )
             }
 
-            androidx.compose.material3.HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             InfoSection("Assignments (All Optional)")
 
-            // Client Selector
-            var showClientDialog by remember { mutableStateOf(false) }
             SelectableField(
                 label = "Client",
-                value = uiState.selectedClient?.name ?: "No client assigned",
+                value = uiState.selectedClient?.name ?: "Select Client",
                 icon = Icons.Default.Store,
-                onClick = { showClientDialog = true }
+                onClick = { showClientDialog.value = true }
             )
 
             // Agent Selector
-            var showAgentDialog by remember { mutableStateOf(false) }
             SelectableField(
                 label = "Field Agent",
-                value = uiState.selectedAgent?.fullName ?: uiState.selectedAgent?.email ?: "No agent assigned",
+                value = uiState.selectedAgent?.fullName ?: uiState.selectedAgent?.email ?: "Select Agent",
                 icon = Icons.Default.Person,
-                onClick = { showAgentDialog = true }
+                onClick = { showAgentDialog.value = true }
             )
 
             TextField(
@@ -145,9 +142,12 @@ fun AdminAddServiceScreen(
             Button(
                 onClick = { viewModel.submitService() },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3B82F6),
+                    disabledContainerColor = Color(0xFF3B82F6).copy(alpha = 0.3f)
+                ),
                 shape = RoundedCornerShape(12.dp),
-                enabled = !uiState.isLoading
+                enabled = !uiState.isLoading && uiState.selectedClient != null && uiState.selectedAgent != null
             ) {
                 if (uiState.isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
@@ -163,22 +163,22 @@ fun AdminAddServiceScreen(
     }
 
     // Dialogs
-    if (showClientDialog) {
+    if (showClientDialog.value) {
         SelectorDialog(
             title = "Select Client",
             items = uiState.clients,
-            onSelectItem = { viewModel.selectClient(it); showClientDialog = false },
-            onDismiss = { showClientDialog = false },
+            onSelectItem = { viewModel.selectClient(it); showClientDialog.value = false },
+            onDismiss = { showClientDialog.value = false },
             itemLabel = { it.name }
         )
     }
 
-    if (showAgentDialog) {
+    if (showAgentDialog.value) {
         SelectorDialog(
             title = "Select Agent",
             items = uiState.agents,
-            onSelectItem = { viewModel.selectAgent(it); showAgentDialog = false },
-            onDismiss = { showAgentDialog = false },
+            onSelectItem = { viewModel.selectAgent(it); showAgentDialog.value = false },
+            onDismiss = { showAgentDialog.value = false },
             itemLabel = { it.fullName ?: it.email }
         )
     }
@@ -226,27 +226,62 @@ private fun <T> SelectorDialog(
     onDismiss: () -> Unit,
     itemLabel: (T) -> String
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredItems = remember(searchQuery, items) {
+        if (searchQuery.isBlank()) items
+        else items.filter { itemLabel(it).contains(searchQuery, ignoreCase = true) }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, color = Color.Black) },
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(title, color = MaterialTheme.colorScheme.onSurface)
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    ),
+                    singleLine = true
+                )
+            }
+        },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState())
             ) {
-                // Option for None
-                ListItem(
-                    headlineContent = { Text("None / Unassigned", color = Color.Gray) },
-                    modifier = Modifier.clickable { onSelectItem(null) }
-                )
-                
-                items.forEach { item ->
+                if (filteredItems.isEmpty() && searchQuery.isNotBlank()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("No results matching \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                } else if (items.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("No data available", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+
+                // Option for None (Only show if search is empty or matches)
+                if (searchQuery.isBlank()) {
                     ListItem(
-                        headlineContent = { Text(itemLabel(item), color = Color.Black) },
+                        headlineContent = { Text("None / Unassigned", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) },
+                        modifier = Modifier.clickable { onSelectItem(null) }
+                    )
+                }
+                
+                filteredItems.forEach { item ->
+                    ListItem(
+                        headlineContent = { Text(itemLabel(item), color = MaterialTheme.colorScheme.onSurface) },
                         modifier = Modifier.clickable { onSelectItem(item) }
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.primary) } }
     )
 }

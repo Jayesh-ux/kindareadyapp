@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import kotlinx.coroutines.launch
+import androidx.work.*
+import java.util.concurrent.TimeUnit
 /**
  * Centralized manager for location tracking state.
  *
@@ -32,31 +34,62 @@ class LocationTrackingStateManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val locationSettingsMonitor = LocationSettingsMonitor(appContext)
+    
     private val _trackingState = MutableStateFlow(false)
     val trackingState: StateFlow<Boolean> = _trackingState.asStateFlow()
 
+    private val _gpsState = MutableStateFlow(true)
+    val gpsState: StateFlow<Boolean> = _gpsState.asStateFlow()
+
+    private val _permissionState = MutableStateFlow(true)
+    val permissionState: StateFlow<Boolean> = _permissionState.asStateFlow()
+
     init {
         updateTrackingState()
-        startLocationSettingsMonitoring()  // 👈 Add this
+        startLocationSettingsMonitoring()
+        updatePermissionState()
+        scheduleHealthCheck()
+    }
+
+    private fun scheduleHealthCheck() {
+        val workRequest = PeriodicWorkRequestBuilder<LocationHealthWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(Constraints.NONE) // Rule 3: Do NOT spam restart, system limit 15 min
+            .addTag("TrackingHealthCheck")
+            .build()
+
+        WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+            "LocationTrackingHealthCheck",
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
+        Timber.tag(TAG).d("Scheduled periodic health check every 15 minutes")
     }
 
     private fun startLocationSettingsMonitoring() {
         locationSettingsMonitor.startMonitoring()
 
-        // ✅ FIXED: Use class-level scope instead of anonymous CoroutineScope that leaked
         scope.launch {
             locationSettingsMonitor.isLocationEnabled.collect { enabled ->
-                Timber.tag(TAG).d("Location enabled state changed: $enabled")
+                Timber.tag(TAG).d("GPS state changed: $enabled")
+                _gpsState.value = enabled
 
                 // If location was disabled and service is running, stop it
                 if (!enabled && isServiceRunning()) {
-                    Timber.tag(TAG).w("⚠️ Location disabled by user, stopping tracking service")
+                    Timber.tag(TAG).w("⚠️ GPS disabled by user, stopping tracking service")
                     stopTracking()
                 }
 
-                // Update tracking state
                 updateTrackingState()
             }
+        }
+    }
+
+    fun updatePermissionState() {
+        val granted = hasLocationPermissions()
+        _permissionState.value = granted
+        if (!granted && isServiceRunning()) {
+            Timber.tag(TAG).w("⚠️ Permissions revoked, stopping tracking service")
+            scope.launch { stopTracking() }
         }
     }
 
@@ -101,6 +134,9 @@ class LocationTrackingStateManager(
         }
 
         try {
+            // Rule 8: Prompt for battery optimization (only once)
+            BatteryOptimizationHandler.promptToDisableOptimization(appContext)
+
             trackingManager.startTracking()
             Timber.tag(TAG).d("➡️ Forwarded START to LocationTrackingManager")
 
@@ -197,6 +233,6 @@ class LocationTrackingStateManager(
     }
 
     companion object {
-        private const val TAG = "LocationTrackingStateMgr"
+        private const val TAG = "TrackingSystem"
     }
 }

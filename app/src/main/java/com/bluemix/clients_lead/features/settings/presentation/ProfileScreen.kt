@@ -91,7 +91,6 @@ fun ProfileScreen(
                 "content" -> AnimatedProfileContent(
                     paddingValues = paddingValues,
                     uiState = uiState,
-                    onToggleTracking = viewModel::toggleLocationTracking,
                     onSignOutClick = { showLogoutDialog = true },
                     onEditName = { viewModel.showNameDialog() }
                 )
@@ -185,7 +184,6 @@ private fun ErrorContent(
 private fun AnimatedProfileContent(
     paddingValues: PaddingValues,
     uiState: com.bluemix.clients_lead.features.settings.vm.ProfileUiState,
-    onToggleTracking: (Boolean) -> Unit,
     onSignOutClick: () -> Unit,
     onEditName: () -> Unit
 ) {
@@ -220,16 +218,8 @@ private fun AnimatedProfileContent(
             )
         }
 
-        if (!uiState.isAdmin) {
-            AnimatedSection(title = "Settings", index = 1) {
-                AnimatedTrackingToggle(
-                    isEnabled = uiState.isTrackingEnabled,
-                    onToggle = onToggleTracking
-                )
-            }
-        }
 
-        AnimatedSection(title = "Account", index = 2) {
+        AnimatedSection(title = "Account", index = 1) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AnimatedProfileMenuItem(
                     icon = Icons.Default.Email,
@@ -553,95 +543,6 @@ private fun AnimatedSection(
     }
 }
 
-@Composable
-private fun AnimatedTrackingToggle(
-    isEnabled: Boolean,
-    onToggle: (Boolean) -> Unit
-) {
-    var isVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay(100)
-        isVisible = true
-    }
-
-    val scale by animateFloatAsState(
-        targetValue = if (isVisible) 1f else 0.9f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "toggleScale"
-    )
-
-    val backgroundColor by animateColorAsState(
-        targetValue = if (isEnabled)
-            AppTheme.colors.success.copy(alpha = 0.1f)
-        else
-            AppTheme.colors.surface,
-        animationSpec = tween(300),
-        label = "toggleBackground"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(16.dp))
-            .background(backgroundColor)
-            .padding(20.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                val iconColor by animateColorAsState(
-                    targetValue = if (isEnabled) AppTheme.colors.success else AppTheme.colors.primary,
-                    animationSpec = tween(300),
-                    label = "iconColor"
-                )
-
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = "Location",
-                    tint = iconColor,
-                    modifier = Modifier.size(28.dp)
-                )
-
-                Column {
-                    Text(
-                        text = "Background Location",
-                        style = AppTheme.typography.body1,
-                        color = AppTheme.colors.text
-                    )
-
-                    AnimatedContent(
-                        targetState = isEnabled,
-                        transitionSpec = {
-                            fadeIn() + slideInVertically() togetherWith
-                                    fadeOut() + slideOutVertically()
-                        },
-                        label = "statusText"
-                    ) { enabled ->
-                        Text(
-                            text = if (enabled) "Active" else "Inactive",
-                            style = AppTheme.typography.body3,
-                            color = if (enabled) AppTheme.colors.success else AppTheme.colors.textSecondary
-                        )
-                    }
-                }
-            }
-
-            ui.components.Switch(
-                checked = isEnabled,
-                onCheckedChange = onToggle
-            )
-        }
-    }
-}
 
 @Composable
 private fun AnimatedProfileMenuItem(

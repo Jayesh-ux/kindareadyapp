@@ -109,7 +109,7 @@ class LocationManager(
             fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
                 ?: fusedLocationClient.lastLocation.await() // Fallback to stale if fresh fails
         } catch (e: Exception) {
-            Timber.e(e, "Error getting fresh/last location")
+            Timber.tag("TrackingSystem").e(e, "Error getting fresh/last location")
             null
         }
     }
@@ -144,7 +144,7 @@ class LocationManager(
                     if (location.accuracy <= 150f) {
                         trySend(location).isSuccess
                     } else {
-                        Timber.tag("GPS").w("Ignoring highly inaccurate location: ${location.accuracy}m")
+                        Timber.tag("TrackingSystem").w("Ignoring highly inaccurate location: ${location.accuracy}m")
                     }
                 }
             }
@@ -164,7 +164,7 @@ class LocationManager(
                 locationCallback,
                 Looper.getMainLooper()
             ).addOnFailureListener { exception ->
-                Timber.e(exception, "Failed to request location updates")
+                Timber.tag("TrackingSystem").e(exception, "Failed to request location updates")
                 close(exception)
             }
         } catch (e: SecurityException) {

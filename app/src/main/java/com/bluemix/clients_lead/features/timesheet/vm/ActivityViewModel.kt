@@ -75,12 +75,12 @@ class ActivityViewModel(
     private fun observeUserRole() {
         viewModelScope.launch {
             observeAuthState().collect { user ->
-                val isAdmin = user?.isAdmin == true
+                val isAdminOrSuperAdmin = user?.isAdmin == true || user?.isSuperAdmin == true  // ✅ Combined
                 _uiState.update { it.copy(
-                    isAdmin = isAdmin,
-                    showAllAgents = if (isAdmin) true else it.showAllAgents
+                    isAdmin = isAdminOrSuperAdmin,
+                    showAllAgents = if (isAdminOrSuperAdmin) true else it.showAllAgents
                 ) }
-                if (isAdmin) {
+                if (isAdminOrSuperAdmin) {
                     loadTeamAgents()
                     loadDailySummary()
                 }

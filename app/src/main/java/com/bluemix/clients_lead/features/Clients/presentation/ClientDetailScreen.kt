@@ -37,7 +37,6 @@ import kotlinx.coroutines.launch
 fun ClientDetailScreen(
     clientId: String,
     onNavigateBack: () -> Unit,
-    onNavigateToLandmarkSearch: (String, String) -> Unit = { _, _ -> },
     viewModel: ClientDetailViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -47,7 +46,7 @@ fun ClientDetailScreen(
     var showLocationDialog by remember { mutableStateOf(false) }
     var pendingLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var dialogTitle by remember { mutableStateOf("") }
-    var landmarkName by remember { mutableStateOf("") }
+    var gpsLabel by remember { mutableStateOf("") }
     
     // Location permission launcher
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -64,7 +63,7 @@ fun ClientDetailScreen(
                     location?.let {
                         pendingLocation = Pair(it.latitude, it.longitude)
                         dialogTitle = "Tag this client at your current location?"
-                        landmarkName = "Current GPS (${String.format("%.6f", it.latitude)}, ${String.format("%.6f", it.longitude)})"
+                        gpsLabel = "Current GPS (${String.format("%.6f", it.latitude)}, ${String.format("%.6f", it.longitude)})"
                         showLocationDialog = true
                     }
                 }
@@ -127,7 +126,6 @@ fun ClientDetailScreen(
                     client = uiState.client!!,
                     paddingValues = paddingValues,
                     context = context,
-                    onNavigateToLandmarkSearch = onNavigateToLandmarkSearch,
                     onTagLocation = { lat, lng, source ->
                         viewModel.tagLocation(lat, lng, source)
                     },
@@ -142,7 +140,7 @@ fun ClientDetailScreen(
                                     location?.let {
                                         pendingLocation = Pair(it.latitude, it.longitude)
                                         dialogTitle = "Tag this client at your current location?"
-                                        landmarkName = "Current GPS (${String.format("%.6f", it.latitude)}, ${String.format("%.6f", it.longitude)})"
+                                        gpsLabel = "Current GPS (${String.format("%.6f", it.latitude)}, ${String.format("%.6f", it.longitude)})"
                                         showLocationDialog = true
                                     }
                                 }
@@ -171,7 +169,7 @@ fun ClientDetailScreen(
                 pendingLocation = null
             },
             title = { Text(dialogTitle) },
-            text = { Text("$landmarkName\n\nDo you want to tag this client here?") },
+            text = { Text("$gpsLabel\n\nDo you want to tag this client here?") },
             confirmButton = {
                 Button(onClick = {
                     pendingLocation?.let { (lat, lng) ->
@@ -200,7 +198,6 @@ private fun ClientDetailContent(
     client: Client,
     paddingValues: PaddingValues,
     context: android.content.Context,
-    onNavigateToLandmarkSearch: (String, String) -> Unit,
     onTagLocation: (Double, Double, String) -> Unit = { _, _, _ -> },
     onRequestLocation: () -> Unit = {}
 ) {

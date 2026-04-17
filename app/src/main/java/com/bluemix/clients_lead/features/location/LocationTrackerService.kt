@@ -150,28 +150,42 @@ class LocationTrackerService : Service() {
         }
 
         return try {
-            // Now handle the intent
-            when (intent?.action) {
-                Action.START.name -> {
-                    activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
-                    val userId = sessionManager.getCurrentUserId()
-                    if (userId != null) {
-                        start(userId)
-                    } else {
-                        Timber.e("Cannot start tracking: User not authenticated")
-                        stop()
-                    }
+            // OS-Level Reliability: If system restarts service after crash/kill, intent is null
+            if (intent == null || intent.action == null) {
+                Timber.tag(TAG).d("🔄 Service restarted by OS (null intent). Validating conditions...")
+                val userId = sessionManager.getCurrentUserId()
+                if (userId != null && hasConditionsMet()) {
+                    Timber.tag(TAG).d("✅ Session and conditions valid. Resuming tracking...")
+                    restoreState() // Restore active client if any
+                    start(userId)
+                } else {
+                    Timber.tag(TAG).w("🛑 Conditions not met on restart (User: ${sessionManager.getCurrentUserId() != null}). Stopping...")
+                    stop()
                 }
-                Action.UPDATE_CLIENT.name -> {
-                    activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
-                    activeClientName = intent.getStringExtra(EXTRA_CLIENT_NAME)
-                    transportMode = intent.getStringExtra(EXTRA_TRANSPORT_MODE)
-                    activeClientLat = if (intent.hasExtra(EXTRA_CLIENT_LAT)) intent.getDoubleExtra(EXTRA_CLIENT_LAT, 0.0) else null
-                    activeClientLng = if (intent.hasExtra(EXTRA_CLIENT_LNG)) intent.getDoubleExtra(EXTRA_CLIENT_LNG, 0.0) else null
-                    persistState() // S5: save to disk
-                Timber.d("📍 Updated active client: $activeClientName ($activeClientId) via $transportMode at ($activeClientLat, $activeClientLng)")
-            }
-            Action.STOP.name -> stop()
+            } else {
+                // Handle explicit actions
+                when (intent.action) {
+                    Action.START.name -> {
+                        activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
+                        val userId = sessionManager.getCurrentUserId()
+                        if (userId != null && hasConditionsMet()) {
+                            start(userId)
+                        } else {
+                            Timber.tag(TAG).e("Cannot start tracking: Session or conditions failed")
+                            stop()
+                        }
+                    }
+                    Action.UPDATE_CLIENT.name -> {
+                        activeClientId = intent.getStringExtra(EXTRA_CLIENT_ID)
+                        activeClientName = intent.getStringExtra(EXTRA_CLIENT_NAME)
+                        transportMode = intent.getStringExtra(EXTRA_TRANSPORT_MODE)
+                        activeClientLat = if (intent.hasExtra(EXTRA_CLIENT_LAT)) intent.getDoubleExtra(EXTRA_CLIENT_LAT, 0.0) else null
+                        activeClientLng = if (intent.hasExtra(EXTRA_CLIENT_LNG)) intent.getDoubleExtra(EXTRA_CLIENT_LNG, 0.0) else null
+                        persistState() // S5: save to disk
+                        Timber.d("📍 Updated active client: $activeClientName ($activeClientId) via $transportMode at ($activeClientLat, $activeClientLng)")
+                    }
+                    Action.STOP.name -> stop()
+                }
             }
 
             START_STICKY // ✅ Ensure service restarts if killed
@@ -183,8 +197,7 @@ class LocationTrackerService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Timber.w("🚫 App removed from recents - continuing location tracking in background")
-        // stop() // ✅ REMOVED: Do not stop service when app is swiped away
+        Timber.tag(TAG).w("🚫 App removed from recents - continuing location tracking in background")
         super.onTaskRemoved(rootIntent)
     }
 
@@ -198,135 +211,120 @@ class LocationTrackerService : Service() {
     }
 
     private fun start(userId: String) {
-        // Prevent duplicate start
         if (locationTrackingJob?.isActive == true) {
-            Timber.w("Location tracking already running")
+            Timber.tag(TAG).w("Location tracking already running")
             return
         }
 
-        Timber.d("Starting location tracking for user: $userId")
+        Timber.tag(TAG).d("Starting tracking for user: $userId")
 
-        // S5: Restore persisted state on restart
         if (activeClientId == null) {
             restoreState()
         }
 
-        val locationManager = LocationManager(applicationContext)
-        if (!locationManager.hasLocationPermission()) {
-            Timber.e("Cannot start tracking: Location permission not granted")
-            stop()
-            return
-        }
-        if (!locationManager.isLocationEnabled()) {
-            Timber.e("Cannot start tracking: Location services disabled")
+        if (!hasConditionsMet()) {
+            Timber.tag(TAG).e("Cannot start: Conditions not met (Permissions or GPS)")
             stop()
             return
         }
 
+        val locationManager = LocationManager(applicationContext)
 
         // Start location tracking
         locationTrackingJob = scope.launch {
             try {
-                locationManager.trackLocation().collect { location ->
-
-                    if (!locationManager.isLocationEnabled()) {
-                        Timber.w("🚫 GPS turned OFF while service running → stopping service")
+                locationManager.trackLocation().collect { trackingLocation: android.location.Location ->
+                    if (!hasConditionsMet()) {
+                        Timber.tag(TAG).w("🚫 Conditions lost during tracking → stopping service")
                         stop()
                         return@collect
                     }
 
-                    latestLocation = location
-                    _locationFlow.emit(location)
+                    latestLocation = trackingLocation
+                    scope.launch {
+                        _locationFlow.emit(trackingLocation)
+                    }
 
-                    val latitude = String.format(java.util.Locale.US, "%.4f", location.latitude)
-                    val longitude = String.format(java.util.Locale.US, "%.4f", location.longitude)
+                    val latitudeStr = String.format(java.util.Locale.US, "%.4f", trackingLocation.latitude)
+                    val longitudeStr = String.format(java.util.Locale.US, "%.4f", trackingLocation.longitude)
 
                     notificationManager.notify(
                         NOTIFICATION_ID,
                         notificationBuilder
-                            .setContentText("Location: $latitude / $longitude")
+                            .setContentText("Location: $latitudeStr / $longitudeStr")
                             .build()
                     )
 
                     // ✅ INTELLIGENT TRACKING: Save only if significant movement or time elapsed
                     val userId = sessionManager.getCurrentUserId()
                     if (userId != null) {
-                        val distanceMoved = lastSavedLocation?.distanceTo(location) ?: Float.MAX_VALUE
+                        val distanceMoved = lastSavedLocation?.distanceTo(trackingLocation) ?: Float.MAX_VALUE
                         val timeElapsed = System.currentTimeMillis() - lastSavedTime
                         
                         // ✅ MOVEMENT-BASED: Save if moved > 30m OR if it's been > 90 seconds (Real-time Heartbeat)
                         if (distanceMoved >= 30f || timeElapsed >= (90 * 1000L)) {
-                            Timber.d("📍 Distance: ${distanceMoved}m, Time: ${timeElapsed}ms → Saving breadcrumb")
-                            lastSavedLocation = location
+                            Timber.tag(TAG).d("📍 Distance: ${distanceMoved}m, Time: ${timeElapsed}ms → Saving breadcrumb")
+                            lastSavedLocation = trackingLocation
                             lastSavedTime = System.currentTimeMillis()
                             
                             // S11: Idle detection
                             if (distanceMoved >= IDLE_DISTANCE_THRESHOLD) {
                                 if (isCurrentlyIdle) {
-                                    // Agent was idle but started moving again
                                     isCurrentlyIdle = false
                                     val idleDurationMin = ((System.currentTimeMillis() - lastSignificantMoveTime) / 60000).toInt()
                                     scope.launch {
                                         locationRepository.insertLocationLog(
                                             userId = userId,
-                                            latitude = location.latitude,
-                                            longitude = location.longitude,
-                                            accuracy = location.accuracy.toDouble(),
-
+                                            latitude = trackingLocation.latitude,
+                                            longitude = trackingLocation.longitude,
+                                            accuracy = trackingLocation.accuracy.toDouble(),
                                             battery = BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
                                             clientId = activeClientId,
                                             markActivity = "IDLE_END",
                                             markNotes = "Agent resumed movement after ${idleDurationMin}min idle"
                                         )
                                     }
-                                    Timber.d("▶️ Agent resumed after ${idleDurationMin}min idle")
+                                    Timber.tag(TAG).d("▶️ Agent resumed after ${idleDurationMin}min idle")
                                 }
                                 lastSignificantMoveTime = System.currentTimeMillis()
                             } else {
-                                // Agent hasn't moved much
                                 val timeSinceLastMove = System.currentTimeMillis() - lastSignificantMoveTime
                                 if (!isCurrentlyIdle && timeSinceLastMove >= IDLE_THRESHOLD_MS && !activeClientId.isNullOrBlank()) {
                                     isCurrentlyIdle = true
                                     scope.launch {
                                         locationRepository.insertLocationLog(
                                             userId = userId,
-                                            latitude = location.latitude,
-                                            longitude = location.longitude,
-                                            accuracy = location.accuracy.toDouble(),
-
+                                            latitude = trackingLocation.latitude,
+                                            longitude = trackingLocation.longitude,
+                                            accuracy = trackingLocation.accuracy.toDouble(),
                                             battery = BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
                                             clientId = activeClientId,
                                             markActivity = "IDLE_START",
                                             markNotes = "Agent stationary for 15+ min during journey to ${activeClientName ?: activeClientId}"
                                         )
                                     }
-                                    Timber.d("⏸️ Agent idle for 15+ min during journey")
+                                    Timber.tag(TAG).d("⏸️ Agent idle for 15+ min during journey")
                                 }
                             }
                             
-                            // ✅ S4: Determine activity tag based on state
                             var currentActivity: String
                             if (!activeClientId.isNullOrBlank()) {
-                                // Agent is on an active journey
                                 currentActivity = "TRAVELING"
                                 if (activeClientLat != null && activeClientLng != null) {
-                                    val clientLoc = Location("").apply {
-                                        setLatitude(activeClientLat!!)
-                                        setLongitude(activeClientLng!!)
+                                    val clientLoc = android.location.Location("").apply {
+                                        latitude = activeClientLat!!
+                                        longitude = activeClientLng!!
                                     }
-                                    val distanceToClient = location.distanceTo(clientLoc)
+                                    val distanceToClient = trackingLocation.distanceTo(clientLoc)
                                     if (distanceToClient <= 200f) {
                                         currentActivity = "AT_CLIENT_SITE"
                                     }
-                                    Timber.d("📏 Distance to client $activeClientId: ${distanceToClient}m. Activity: $currentActivity")
+                                    Timber.tag(TAG).d("📏 Distance to client $activeClientId: ${distanceToClient}m. Activity: $currentActivity")
                                 }
-                                // S3: If no client coords, default stays TRAVELING (not AT_CLIENT_SITE)
                             } else {
-                                // S4: Agent is clocked in but not on a journey → ON_DUTY
                                 currentActivity = "ON_DUTY"
                             }
                             
-                            // ✅ Enhanced breadcrumb note
                             val breadcrumbNote = when (currentActivity) {
                                 "TRAVELING" -> "Heading to ${activeClientName ?: activeClientId} via ${transportMode ?: "Car"}"
                                 "AT_CLIENT_SITE" -> "At ${activeClientName ?: activeClientId} site"
@@ -334,46 +332,43 @@ class LocationTrackerService : Service() {
                                 else -> null
                             }
 
-                            // ✅ Activity log throttling: Only log if >200m moved OR >5min since last log
                             val currentTime = System.currentTimeMillis()
-                            val distanceFromLastLog = lastLoggedLocation?.let { location.distanceTo(it) } ?: Float.MAX_VALUE
+                            val distanceFromLastLog = lastLoggedLocation?.let { trackingLocation.distanceTo(it) } ?: Float.MAX_VALUE
                             val timeSinceLastLog = currentTime - lastLogTime
                             
                             val shouldLog = lastLoggedLocation == null || 
-                                        distanceFromLastLog > LOG_DISTANCE_THRESHOLD_METERS || 
-                                        timeSinceLastLog > LOG_TIME_THRESHOLD_MS
+                                         distanceFromLastLog > LOG_DISTANCE_THRESHOLD_METERS || 
+                                         timeSinceLastLog > LOG_TIME_THRESHOLD_MS
                             
                             if (shouldLog) {
-                                val result = locationRepository.insertLocationLog(
-                                    userId = userId,
-                                    latitude = location.latitude,
-                                    longitude = location.longitude,
-                                    accuracy = location.accuracy.toDouble(),
-                                    battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
-                                    clientId = activeClientId, // ✅ Pass active client if available
-                                    markActivity = currentActivity, // ✅ Tag as Traveling or At Client Site
-                                    markNotes = breadcrumbNote
-                                )
-                                when (result) {
-                                    is AppResult.Success -> {
-                                        Timber.d("✅ Saved breadcrumb point: ${result.data.id}")
-                                        lastLoggedLocation = location
-                                        lastLogTime = currentTime
+                                scope.launch {
+                                    val result = locationRepository.insertLocationLog(
+                                        userId = userId,
+                                        latitude = trackingLocation.latitude,
+                                        longitude = trackingLocation.longitude,
+                                        accuracy = trackingLocation.accuracy.toDouble(),
+                                        battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(this@LocationTrackerService),
+                                        clientId = activeClientId,
+                                        markActivity = currentActivity,
+                                        markNotes = breadcrumbNote
+                                    )
+                                    when (result) {
+                                        is AppResult.Success -> {
+                                            Timber.tag(TAG).d("✅ Saved breadcrumb point: ${result.data.id}")
+                                            lastLoggedLocation = trackingLocation
+                                            lastLogTime = currentTime
+                                        }
+                                        is AppResult.Error -> Timber.tag(TAG).e("❌ Failed to save breadcrumb: ${result.error.message}")
                                     }
-                                    is AppResult.Error -> Timber.e("❌ Failed to save breadcrumb: ${result.error.message}")
                                 }
                             } else {
-                                Timber.d("⏭️ Skipping log: only ${distanceFromLastLog.toInt()}m moved, ${timeSinceLastLog/60000}min elapsed")
+                                Timber.tag(TAG).d("⏭️ Skipping log: only ${distanceFromLastLog.toInt()}m moved, ${timeSinceLastLog/60000}min elapsed")
                             }
                         }
                     }
                 }
-
-            } catch (e: CancellationException) {
-                Timber.d("Location tracking cancelled")
-                throw e // Re-throw to properly cancel coroutine
             } catch (e: Exception) {
-                Timber.e(e, "Location tracking error")
+                Timber.tag(TAG).e(e, "Tracking error")
                 stop()
             }
         }
@@ -387,12 +382,16 @@ class LocationTrackerService : Service() {
         Timber.d("Movement-based saves are active for $userId.")
     }
 
+    private fun hasConditionsMet(): Boolean {
+        val lm = LocationManager(applicationContext)
+        return lm.hasLocationPermission() && lm.isLocationEnabled()
+    }
+
     suspend fun clearUserPincode() {
         try {
-            // Endpoint not implemented yet
-            Timber.d("Pincode clear not implemented")
+            Timber.tag(TAG).d("Pincode clear not implemented")
         } catch (e: Exception) {
-            Timber.e("Failed to clear pincode: ${e.message}")
+            Timber.tag(TAG).e("Failed to clear pincode: ${e.message}")
         }
     }
 
@@ -448,16 +447,12 @@ class LocationTrackerService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isServiceRunning = false
-        // ...
-
-        // Ensure all jobs are cancelled
         locationTrackingJob?.cancel()
         periodicSaveJob?.cancel()
         serviceJob.cancelChildren()
         serviceJob.cancel()
         scope.cancel()
-
-        Timber.d("Service destroyed")
+        Timber.tag(TAG).d("Service destroyed")
     }
 
     enum class Action {
@@ -465,6 +460,7 @@ class LocationTrackerService : Service() {
     }
 
     companion object {
+        private const val TAG = "TrackingSystem"
         var isServiceRunning = false
             private set
         const val LOCATION_CHANNEL = "location_channel"

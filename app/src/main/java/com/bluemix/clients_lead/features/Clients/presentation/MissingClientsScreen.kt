@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.bluemix.clients_lead.domain.repository.MissingClient
+import com.bluemix.clients_lead.domain.model.Client
 import com.bluemix.clients_lead.features.Clients.vm.MissingClientsViewModel
 import org.koin.androidx.compose.koinViewModel
 
@@ -54,7 +54,7 @@ fun MissingClientsScreen(
                 .padding(paddingValues)
         ) {
             // Summary Card
-            uiState.breakdown?.let { breakdown ->
+            if (uiState.totalMissing > 0) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -67,43 +67,11 @@ fun MissingClientsScreen(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            "Total Missing: ${uiState.totalMissing}",
+                            "Total Missing GPS: ${uiState.totalMissing}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    "Needs Verification",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-                                )
-                                Text(
-                                    "${breakdown.needsVerification}",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.tertiary
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    "No GPS",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-                                )
-                                Text(
-                                    "${breakdown.completelyMissing}",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -169,7 +137,7 @@ fun MissingClientsScreen(
 }
 
 @Composable
-private fun MissingClientCard(client: MissingClient) {
+private fun MissingClientCard(client: Client) {
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {

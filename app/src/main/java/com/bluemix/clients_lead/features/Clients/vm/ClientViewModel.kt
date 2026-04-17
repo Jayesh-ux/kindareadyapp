@@ -50,9 +50,6 @@ data class ClientsUiState(
     val sortByDistance: Boolean = false,
     val userLocation: Pair<Double, Double>? = null,
     val isSearching: Boolean = false,
-    // Start as TRUE so the overlay doesn't flash before the service state is read.
-    // The real value is set in init{} before any UI frame is drawn.
-    val isTrackingEnabled: Boolean = true,
     val isAdmin: Boolean = false,
     val error: String? = null,
     val isCreating: Boolean = false,
@@ -83,7 +80,7 @@ class ClientsViewModel(
         // so the overlay never shows a false-negative on first composition.
         val initiallyTracking = locationTrackingStateManager.isCurrentlyTracking()
             || locationManager.hasLocationPermission() && locationManager.isLocationEnabled()
-        _uiState.value = _uiState.value.copy(isTrackingEnabled = initiallyTracking)
+        _uiState.value = _uiState.value.copy() // Removed isTrackingEnabled as it's mandatory
 
         observeAuth()
         observeTrackingState()
@@ -95,14 +92,14 @@ class ClientsViewModel(
     private fun observeAuth() {
         viewModelScope.launch {
             observeAuthState().collect { user ->
-                val isAdmin = user?.isAdmin ?: false
+                val isAdminOrSuperAdmin = user?.isAdmin == true || user?.isSuperAdmin == true  // ✅ Combined
                 _uiState.update { it.copy(
-                    isAdmin = isAdmin,
+                    isAdmin = isAdminOrSuperAdmin,
                     // Default to remote for admins
-                    searchMode = if (isAdmin) SearchMode.REMOTE else SearchMode.LOCAL
+                    searchMode = if (isAdminOrSuperAdmin) SearchMode.REMOTE else SearchMode.LOCAL
                 )}
                 
-                if (isAdmin) {
+                if (isAdminOrSuperAdmin) {
                     loadClients() // Trigger load immediately for admin
                 }
             }
@@ -142,30 +139,18 @@ class ClientsViewModel(
         viewModelScope.launch {
             locationTrackingStateManager.trackingState.collect { isTracking ->
                 Timber.d("ClientsViewModel: tracking state changed = $isTracking")
-
-                // The service may not be running yet even though GPS is on and permissions
-                // are granted (e.g., service is still spinning up). In that case we keep
-                // isTrackingEnabled = true so the overlay doesn't flash incorrectly.
-                val gpsPlusPermission = locationManager.hasLocationPermission()
-                    && locationManager.isLocationEnabled()
-                val effectiveTracking = isTracking || gpsPlusPermission || _uiState.value.isAdmin
-
-                _uiState.value = _uiState.value.copy(
-                    isTrackingEnabled = effectiveTracking
-                )
-
-                if (!effectiveTracking) {
-                    Timber.d("Tracking truly disabled (no service, no GPS/permission, not admin). Clearing clients.")
-                    _uiState.value = _uiState.value.copy(
-                        clients = emptyList(),
-                        filteredClients = emptyList(),
-                        remoteResults = emptyList(),
-                        isLoading = false,
-                        error = null
-                    )
-                } else {
-                    loadClients()
+ 
+                if (!isTracking && !_uiState.value.isAdmin) {
+                    val lManager = com.bluemix.clients_lead.features.location.LocationManager(context)
+                    if (lManager.hasLocationPermission() && lManager.isLocationEnabled()) {
+                        Timber.w("STRICT: Tracking is OFF for agent with valid permissions. Restarting...")
+                        locationTrackingStateManager.startTracking()
+                    } else {
+                        Timber.d("ℹ️ Clients Watchdog: Skipping restart due to missing permissions or GPS.")
+                    }
                 }
+ 
+                loadClients()
             }
         }
     }
@@ -236,30 +221,22 @@ class ClientsViewModel(
         locationTrackingStateManager.updateTrackingState()
     }
 
-    fun enableTracking() {
-        viewModelScope.launch {
-            Timber.d("ClientsViewModel: enableTracking() requested from UI")
-            locationTrackingStateManager.startTracking()
-        }
-    }
 
     fun loadClients() {
         viewModelScope.launch {
-            val isTracking = locationTrackingStateManager.isCurrentlyTracking()
-            val isAdmin = _uiState.value.isAdmin
-            // Also allow loading when GPS is on + permissions granted even if the
-            // foreground service hasn't fully started yet (avoids the race condition).
+            // STRICT: Only block if literal GPS/Permission is missing. 
+            // We don't block on foreground service state anymore as it auto-starts.
             val gpsPlusPermission = locationManager.hasLocationPermission()
                 && locationManager.isLocationEnabled()
-
-            if (!isTracking && !isAdmin && !gpsPlusPermission) {
-                Timber.w("Denied client loading: no tracking, no admin, and no GPS+permission.")
-                _uiState.value = _uiState.value.copy(
+ 
+            if (!_uiState.value.isAdmin && !gpsPlusPermission) {
+                Timber.w("Denied client loading: no admin and no GPS+permission.")
+                _uiState.update { it.copy(
                     isLoading = false,
                     clients = emptyList(),
                     filteredClients = emptyList(),
-                    error = "Please enable location services to view clients."
-                )
+                    error = "Please enable location services and grant permissions to view clients."
+                ) }
                 return@launch
             }
 

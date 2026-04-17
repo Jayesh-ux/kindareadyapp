@@ -26,7 +26,6 @@ import timber.log.Timber
 data class ProfileUiState(
     val isLoading: Boolean = false,
     val profile: UserProfile? = null,
-    val isTrackingEnabled: Boolean = false,
     val error: String? = null,
     val totalSpent: Double = 0.0,
     val showNameDialog: Boolean = false,
@@ -69,10 +68,11 @@ class ProfileViewModel(
                 if (user != null) {
                     val isTrialUser = user.isTrialUser
                     val daysRemaining = trialManager.getRemainingDays(isTrialUser)
+                    val isAdminOrSuperAdmin = user.isAdmin == true || user.isSuperAdmin == true  // ✅ Combined
 
                     _uiState.update {
                         it.copy(
-                            isAdmin = user.isAdmin ?: false,
+                            isAdmin = isAdminOrSuperAdmin,
                             isTrialUser = isTrialUser,
                             companyName = user.companyName,
                             trialDaysRemaining = daysRemaining,
@@ -104,7 +104,16 @@ class ProfileViewModel(
         viewModelScope.launch {
             trackingStateManager.updateTrackingState()
             trackingStateManager.trackingState.collectLatest { enabled ->
-                _uiState.update { it.copy(isTrackingEnabled = enabled) }
+                // STRICT: Flag removed, tracking should always be enabled for agents
+                if (!enabled && !_uiState.value.isAdmin) {
+                    val lManager = com.bluemix.clients_lead.features.location.LocationManager(context)
+                    if (lManager.hasLocationPermission() && lManager.isLocationEnabled()) {
+                        Timber.w("STRICT: Tracking found DISABLED in Profile with valid permissions. Restarting...")
+                        trackingStateManager.startTracking()
+                    } else {
+                        Timber.d("ℹ️ Profile Watchdog: Skipping restart due to missing permissions or GPS.")
+                    }
+                }
             }
         }
     }
@@ -164,25 +173,11 @@ class ProfileViewModel(
         }
     }
 
-    fun toggleLocationTracking(enabled: Boolean) {
-        viewModelScope.launch {
-            saveLocationTrackingPreference(enabled)
-
-            if (enabled) {
-                Timber.d("Starting tracking from Profile")
-                trackingStateManager.startTracking()
-            } else {
-                Timber.d("Stopping tracking from Profile")
-                trackingStateManager.stopTracking()
-            }
-        }
-    }
 
     fun handleSignOut(onSuccess: () -> Unit) {
         viewModelScope.launch {
-            if (_uiState.value.isTrackingEnabled) {
-                trackingStateManager.stopTracking()
-            }
+            // STRICT: Tracking ONLY stops on explicit logout
+            trackingStateManager.stopTracking()
             when (val result = signOut()) {
                 is AppResult.Success -> onSuccess()
                 is AppResult.Error -> _uiState.update {

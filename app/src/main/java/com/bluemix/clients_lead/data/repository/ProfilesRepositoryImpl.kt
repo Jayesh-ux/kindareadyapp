@@ -109,12 +109,14 @@ class ProfileRepositoryImpl(
     }
 
     override suspend fun getLocationTrackingPreference(): LocationTrackingPreference {
-        val isEnabled = prefs.getBoolean("location_tracking_enabled", false)
-        return LocationTrackingPreference(isEnabled)
+        // STRICT: Always return enabled for agents
+        return LocationTrackingPreference(true)
     }
 
     override suspend fun saveLocationTrackingPreference(enabled: Boolean) {
-        prefs.edit().putBoolean("location_tracking_enabled", enabled).apply()
+        // STRICT: Ignore requests to disable tracking preference
+        Timber.tag(TAG).d("STRICT: Ignoring request to save tracking preference as $enabled")
+        prefs.edit().putBoolean("location_tracking_enabled", true).apply()
     }
 }
 

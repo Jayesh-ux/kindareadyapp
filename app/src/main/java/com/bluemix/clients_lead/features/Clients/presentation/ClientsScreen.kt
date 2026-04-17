@@ -359,10 +359,23 @@ fun ClientsScreen(
                 }
             }
 
-            if (!uiState.isTrackingEnabled && !uiState.isAdmin) {
+            val locationMonitor = remember { com.bluemix.clients_lead.features.location.LocationSettingsMonitor(context) }
+            val gpsEnabled by locationMonitor.isLocationEnabled.collectAsState()
+            val hasPermission = remember(uiState.isLoading) { 
+                com.bluemix.clients_lead.features.location.LocationManager(context).hasLocationPermission() 
+            }
+            
+            if (!uiState.isAdmin && (!gpsEnabled || !hasPermission)) {
                 TrackingRequiredOverlay(
                     modifier = Modifier.fillMaxSize(),
-                    onEnableTracking = { viewModel.enableTracking() },
+                    onEnableTracking = { 
+                        if (!hasPermission) {
+                            // Permission request would normally happen here, but for now we link to settings
+                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        } else if (!gpsEnabled) {
+                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        }
+                    },
                     onRefreshStatus = { viewModel.refreshTrackingState() }
                 )
             }

@@ -1,3 +1,4 @@
+// EditNameDialog.kt - Fixed version
 package com.bluemix.clients_lead.features.settings.presentation
 
 import androidx.compose.animation.AnimatedVisibility
@@ -12,13 +13,17 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ui.AppTheme
 import ui.components.Button
 import ui.components.ButtonVariant
-import ui.components.Text
 
 @Composable
 fun EditNameDialog(
@@ -30,6 +35,14 @@ fun EditNameDialog(
 ) {
     var nameInput by remember(currentName) { mutableStateOf(currentName ?: "") }
     var nameError by remember { mutableStateOf<String?>(null) }
+
+    // Reset input when dialog opens
+    LaunchedEffect(show) {
+        if (show) {
+            nameInput = currentName ?: ""
+            nameError = null
+        }
+    }
 
     fun validateAndSave() {
         when {
@@ -43,11 +56,7 @@ fun EditNameDialog(
         }
     }
 
-    AnimatedVisibility(
-        visible = show,
-        enter = fadeIn() + scaleIn(initialScale = 0.8f),
-        exit = fadeOut() + scaleOut(targetScale = 0.8f)
-    ) {
+    if (show) {
         AlertDialog(
             onDismissRequest = onDismiss,
             containerColor = AppTheme.colors.surface,
@@ -71,7 +80,7 @@ fun EditNameDialog(
                 Column {
                     Text(
                         text = if (currentName.isNullOrBlank())
-                            "Please add your name to continue using the app."
+                            "Please add your name for better experience."
                         else
                             "Update your display name",
                         style = AppTheme.typography.body1,
@@ -82,14 +91,30 @@ fun EditNameDialog(
 
                     OutlinedTextField(
                         value = nameInput,
-                        onValueChange = {
-                            nameInput = it
+                        onValueChange = { newValue ->
+                            nameInput = newValue
                             nameError = null
                         },
                         label = { Text("Full Name") },
                         placeholder = { Text("Enter your full name") },
                         isError = nameError != null,
                         enabled = !isLoading,
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = AppTheme.colors.text,
+                            fontSize = 16.sp
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = AppTheme.colors.text,
+                            unfocusedTextColor = AppTheme.colors.text,
+                            focusedBorderColor = AppTheme.colors.primary,
+                            unfocusedBorderColor = Color(0xFF64748B),
+                            focusedLabelColor = AppTheme.colors.primary,
+                            unfocusedLabelColor = Color(0xFF64748B),
+                            cursorColor = AppTheme.colors.primary,
+                            errorBorderColor = AppTheme.colors.error,
+                            errorLabelColor = AppTheme.colors.error
+                        ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -108,7 +133,7 @@ fun EditNameDialog(
                 Button(
                     onClick = { validateAndSave() },
                     variant = ButtonVariant.Primary,
-                    enabled = !isLoading
+                    enabled = !isLoading && nameInput.isNotBlank()
                 ) {
                     Text(
                         text = if (isLoading) "Saving..." else "Save",
@@ -116,15 +141,16 @@ fun EditNameDialog(
                     )
                 }
             },
-            dismissButton = if (currentName.isNullOrBlank()) null else {
-                {
-                    Button(
-                        onClick = onDismiss,
-                        variant = ButtonVariant.Secondary,
-                        enabled = !isLoading
-                    ) {
-                        Text("Cancel", style = AppTheme.typography.button)
-                    }
+            dismissButton = {
+                Button(
+                    onClick = onDismiss,
+                    variant = ButtonVariant.Secondary,
+                    enabled = !isLoading
+                ) {
+                    Text(
+                        text = if (currentName.isNullOrBlank()) "Skip" else "Cancel",
+                        style = AppTheme.typography.button
+                    )
                 }
             }
         )

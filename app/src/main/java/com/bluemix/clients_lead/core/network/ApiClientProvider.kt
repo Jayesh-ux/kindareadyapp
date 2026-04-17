@@ -59,8 +59,9 @@ object ApiClientProvider {
             socketTimeoutMillis = 30_000
         }
 
-        // ✅ FIXED: expectSuccess = false — let repositories handle errors via runAppCatching.
-        // Setting true fights the SessionInvalidationPlugin that needs to read 401 body text.
-        expectSuccess = false
+        // ✅ FIXED: expectSuccess = true — Throws ClientRequestException on 4xx/5xx
+        // This enables proper error mapping via toAppError() in KtorErrorMapper.
+        // SessionInvalidationPlugin intercepts at HttpSend level and runs before this check.
+        expectSuccess = true
     }
 }

@@ -10,9 +10,19 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import com.bluemix.clients_lead.core.navigation.AppNavHost
+import com.bluemix.clients_lead.core.network.SessionManager
+import com.bluemix.clients_lead.features.location.BlockingTrackingScreen
+import com.bluemix.clients_lead.features.location.LocationTrackingStateManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import ui.AppTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val trackingStateManager: LocationTrackingStateManager by inject()
+    private val sessionManager: SessionManager by inject()
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()

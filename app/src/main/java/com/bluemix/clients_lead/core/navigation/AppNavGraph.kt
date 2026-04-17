@@ -50,7 +50,7 @@ fun AppNavHost() {
     val session by sessionVM.state.collectAsState()
     val isAdmin = session.user?.isAdmin ?: false
     val isSuperAdmin = session.user?.isSuperAdmin ?: false
-    val isAdminOrSuperAdmin = isAdmin || isSuperAdmin  // ✅ Show Admin Dashboard for both
+    val isAdminOrSuperAdmin = isAdmin || isSuperAdmin  // ✅ Combined for both Admin and SuperAdmin
 
     // ✅ Reactive Tracking Launch
     val trackingStateManager: LocationTrackingStateManager = koinInject()

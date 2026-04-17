@@ -78,8 +78,5 @@ sealed class Route {
     data object AdminMeetingLogs : Route()
 
     @Serializable
-    data class LandmarkSearch(val clientId: String, val clientName: String) : Route()
-
-    @Serializable
     data object MissingClients : Route()
 }

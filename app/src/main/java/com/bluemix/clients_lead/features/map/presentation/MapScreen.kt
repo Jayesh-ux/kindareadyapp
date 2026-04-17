@@ -238,7 +238,7 @@ fun MapScreen(
 
     val isLocationEnabled by locationSettingsMonitor.isLocationEnabled.collectAsState()
     val currentZoom = cameraPositionState.position.zoom
-    val showMarkers = uiState.isAdmin || uiState.isTrackingEnabled
+    val showMarkers = true // STRICT: Always show map/markers for logged-in agents and admins
     val clientCounts = remember(uiState.filteredClients) {
         calculateVisitStatusCounts(uiState.filteredClients)
     }
@@ -275,7 +275,7 @@ fun MapScreen(
     val liveAgentCount = filteredAgentsForMap.count { DateTimeUtils.isRecent(it.timestamp) }
 
     // Show dialog when location is disabled - IMPROVED UI
-    if (!isLocationEnabled && uiState.isTrackingEnabled) {
+    if (!isLocationEnabled && !uiState.isAdmin) {
         AlertDialog(
             onDismissRequest = { },
             title = { 
@@ -642,8 +642,8 @@ fun MapScreen(
                     }
                 }
 
-                // ✅ Tracking Required Warning (Agents only) - PREMIUM REDESIGN
-                if (!uiState.isAdmin && !uiState.isTrackingEnabled && !uiState.isLoading) {
+                // ✅ Mandatory Tracking Overlay: Only show if permissions are missing or GPS is off
+                if (!uiState.isAdmin && (!locationPermissions.allPermissionsGranted || !isLocationEnabled) && !uiState.isLoading) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -755,7 +755,7 @@ fun MapScreen(
                 ) {
                     // Stats Panel
                     AnimatedVisibility(
-                        visible = uiState.isAdmin || uiState.isTrackingEnabled,
+                        visible = true, // Mandatory tracking
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
@@ -782,7 +782,7 @@ fun MapScreen(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(if (uiState.isTrackingEnabled || uiState.isAdmin) Color(0xFF10B981) else Color(0xFFF87171))
+                                    .background(Color(0xFF10B981)) // Always "Online" dot for agents
                             )
                             // Clients in view
                             OverlayStatChip(
@@ -833,7 +833,7 @@ fun MapScreen(
 
                     // Search bar overlay — always visible below stats
                     AnimatedVisibility(
-                        visible = uiState.isAdmin || uiState.isTrackingEnabled,
+                        visible = true,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp)
@@ -952,7 +952,7 @@ fun MapScreen(
                 }
 
                 AnimatedVisibility(
-                    visible = (uiState.isTrackingEnabled || uiState.isAdmin) && !showMeetingSheet,
+                    visible = !showMeetingSheet,
                     modifier = Modifier
                         .offset { IntOffset(legendOffset.x.roundToInt(), legendOffset.y.roundToInt()) }
                         .align(Alignment.CenterStart)
@@ -1001,7 +1001,7 @@ fun MapScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             // Tracking Active indicator - renamed to "Online" for clarity
                             AnimatedVisibility(
-                                visible = uiState.isTrackingEnabled,
+                                visible = !uiState.isAdmin,
                                 enter = fadeIn() + scaleIn(),
                                 exit = fadeOut() + scaleOut()
                             ) {
@@ -1049,7 +1049,7 @@ fun MapScreen(
 
                     // ✅ FIXED OVERLAP: Legend inside Managed Stack
                     AnimatedVisibility(
-                        visible = uiState.isTrackingEnabled || uiState.isAdmin,
+                        visible = true,
                         enter = fadeIn() + expandVertically(),
                         exit = fadeOut() + shrinkVertically()
                     ) {
@@ -1084,7 +1084,7 @@ fun MapScreen(
 
                 // Meeting Bottom Sheet - ONLY FOR AGENTS (Highest priority z-index 2)
                 AnimatedVisibility(
-                    visible = showMeetingSheet && proximityClient != null && !uiState.isAdmin && uiState.isTrackingEnabled,
+                    visible = showMeetingSheet && proximityClient != null && !uiState.isAdmin,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .zIndex(2f),
@@ -1302,7 +1302,7 @@ fun MapScreen(
 
                 // Loading Card
                 AnimatedVisibility(
-                    visible = uiState.isLoading && uiState.isTrackingEnabled,
+                    visible = uiState.isLoading,
                     modifier = Modifier.align(Alignment.Center),
                     enter = scaleIn() + fadeIn(),
                     exit = scaleOut() + fadeOut()
@@ -1333,7 +1333,7 @@ fun MapScreen(
 
                 // Floating Action Button - Changed to Receipt icon (HIDDEN FOR ADMINS)
                 AnimatedVisibility(
-                    visible = uiState.isTrackingEnabled && !uiState.isAdmin,
+                    visible = !uiState.isAdmin,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(bottom = 16.dp, end = 16.dp),
@@ -1361,7 +1361,7 @@ fun MapScreen(
 
                 // Clock Out Button (Visible when tracking is ON)
                 AnimatedVisibility(
-                    visible = uiState.isTrackingEnabled && !uiState.isAdmin,
+                    visible = !uiState.isAdmin,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(bottom = 16.dp, start = 16.dp),
