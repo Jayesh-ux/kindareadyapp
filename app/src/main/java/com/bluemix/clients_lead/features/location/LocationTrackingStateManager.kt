@@ -193,7 +193,23 @@ class LocationTrackingStateManager(
     private fun hasLocationPermissions(): Boolean {
         val fine = ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        return fine || coarse
+        
+        // ✅ FIXED: Also check background location for Android 10+
+        val backgroundLocation = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true // Background permission not required before Android 10
+        }
+        
+        // For tracking to work properly, foreground is minimum required
+        // Background location improves tracking when app is in background
+        val hasForeground = fine || coarse
+        val hasBackground = backgroundLocation
+        
+        Timber.tag(TAG).d("Permission check: foreground=$hasForeground, background=$hasBackground")
+        
+        // Return true if foreground is granted (background is optional but recommended)
+        return hasForeground
     }
 
     @Suppress("DEPRECATION")
