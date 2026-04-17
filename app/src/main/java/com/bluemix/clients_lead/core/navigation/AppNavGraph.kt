@@ -21,7 +21,6 @@ import com.bluemix.clients_lead.core.network.SessionManager
 import com.bluemix.clients_lead.features.Clients.presentation.ClientDetailScreen
 import com.bluemix.clients_lead.features.Clients.presentation.ClientsScreen
 import com.bluemix.clients_lead.features.Clients.presentation.CreateClientScreen
-import com.bluemix.clients_lead.features.Clients.presentation.MissingClientsScreen
 import com.bluemix.clients_lead.features.auth.presentation.screens.AuthScreen
 import com.bluemix.clients_lead.features.auth.vm.SessionViewModel
 import com.bluemix.clients_lead.features.map.presentation.MapScreen
@@ -31,6 +30,8 @@ import com.bluemix.clients_lead.features.admin.presentation.AdminDashboardScreen
 import com.bluemix.clients_lead.features.admin.presentation.AdminJourneyScreen
 import com.bluemix.clients_lead.features.admin.presentation.AdminUserManagementScreen
 import com.bluemix.clients_lead.features.admin.presentation.AdminPinClientScreen
+import com.bluemix.clients_lead.features.location.BlockingTrackingScreen
+import com.bluemix.clients_lead.features.location.LocationTrackingStateManager
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import com.bluemix.clients_lead.features.*
@@ -48,6 +49,16 @@ fun AppNavHost() {
     val sessionVM: SessionViewModel = koinViewModel()
     val session by sessionVM.state.collectAsState()
     val isAdmin = session.user?.isAdmin ?: false
+    val isSuperAdmin = session.user?.isSuperAdmin ?: false
+    val isAdminOrSuperAdmin = isAdmin || isSuperAdmin  // ✅ Show Admin Dashboard for both
+
+    // ✅ Reactive Tracking Launch
+    val trackingStateManager: LocationTrackingStateManager = koinInject()
+    LaunchedEffect(session.isAuthenticated) {
+        if (session.isAuthenticated) {
+            trackingStateManager.startTracking()
+        }
+    }
 
     // ✅ Inject SessionManager to observe invalidation
     val sessionManager: SessionManager = koinInject()
@@ -117,16 +128,31 @@ fun AppNavHost() {
                 MainScaffold(
                     currentRoute = Route.Map,
                     navigationManager = navigationManager,
-                    isAdmin = isAdmin
+                    isAdmin = isAdmin,
+                    isSuperAdmin = isSuperAdmin
                 ) {
-                    MapScreen(
-                        onNavigateToClientDetail = { clientId ->
-                            navigationManager.navigateToClientDetail(clientId)
-                        },
-                        onNavigateToAgentDetail = { agentId ->
-                            navigationManager.navigateToAgentDetail(agentId)
+                    val bypassBlocking = isAdmin || isSuperAdmin  // ✅ Neither Admin nor SuperAdmin is blocked
+                    if (!bypassBlocking) {
+                        BlockingTrackingScreen {
+                            MapScreen(
+                                onNavigateToClientDetail = { clientId ->
+                                    navigationManager.navigateToClientDetail(clientId)
+                                },
+                                onNavigateToAgentDetail = { agentId ->
+                                    navigationManager.navigateToAgentDetail(agentId)
+                                }
+                            )
                         }
-                    )
+                    } else {
+                        MapScreen(
+                            onNavigateToClientDetail = { clientId ->
+                                navigationManager.navigateToClientDetail(clientId)
+                            },
+                            onNavigateToAgentDetail = { agentId ->
+                                navigationManager.navigateToAgentDetail(agentId)
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -139,16 +165,31 @@ fun AppNavHost() {
                 MainScaffold(
                     currentRoute = Route.Clients,
                     navigationManager = navigationManager,
-                    isAdmin = isAdmin
+                    isAdmin = isAdmin,
+                    isSuperAdmin = isSuperAdmin
                 ) {
-                    ClientsScreen(
-                        onNavigateToDetail = { clientId ->
-                            navigationManager.navigateToClientDetail(clientId)
-                        },
-                        onNavigateToCreateClient = {
-                            navigationManager.navigateToCreateClient()
+                    val bypassBlocking = isAdmin || isSuperAdmin  // ✅ Neither Admin nor SuperAdmin is blocked
+                    if (!bypassBlocking) {
+                        BlockingTrackingScreen {
+                            ClientsScreen(
+                                onNavigateToDetail = { clientId ->
+                                    navigationManager.navigateToClientDetail(clientId)
+                                },
+                                onNavigateToCreateClient = {
+                                    navigationManager.navigateToCreateClient()
+                                }
+                            )
                         }
-                    )
+                    } else {
+                        ClientsScreen(
+                            onNavigateToDetail = { clientId ->
+                                navigationManager.navigateToClientDetail(clientId)
+                            },
+                            onNavigateToCreateClient = {
+                                navigationManager.navigateToCreateClient()
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -161,9 +202,17 @@ fun AppNavHost() {
                 MainScaffold(
                     currentRoute = Route.Activity,
                     navigationManager = navigationManager,
-                    isAdmin = isAdmin
+                    isAdmin = isAdmin,
+                    isSuperAdmin = isSuperAdmin
                 ) {
-                    ActivityScreen()
+                    val bypassBlocking = isAdmin || isSuperAdmin  // ✅ Neither Admin nor SuperAdmin is blocked
+                    if (!bypassBlocking) {
+                        BlockingTrackingScreen {
+                            ActivityScreen()
+                        }
+                    } else {
+                        ActivityScreen()
+                    }
                 }
             }
         }
@@ -176,11 +225,21 @@ fun AppNavHost() {
                 MainScaffold(
                     currentRoute = Route.Profile,
                     navigationManager = navigationManager,
-                    isAdmin = isAdmin
+                    isAdmin = isAdmin,
+                    isSuperAdmin = isSuperAdmin
                 ) {
-                    ProfileScreen(
-                        onNavigateToAuth = navigationManager::navigateToAuth
-                    )
+                    val bypassBlocking = isAdmin || isSuperAdmin  // ✅ Neither Admin nor SuperAdmin is blocked
+                    if (!bypassBlocking) {
+                        BlockingTrackingScreen {
+                            ProfileScreen(
+                                onNavigateToAuth = navigationManager::navigateToAuth
+                            )
+                        }
+                    } else {
+                        ProfileScreen(
+                            onNavigateToAuth = navigationManager::navigateToAuth
+                        )
+                    }
                 }
             }
         }
@@ -193,7 +252,8 @@ fun AppNavHost() {
                 MainScaffold(
                     currentRoute = Route.AdminDashboard,
                     navigationManager = navigationManager,
-                    isAdmin = isAdmin
+                    isAdmin = isAdmin,
+                    isSuperAdmin = isSuperAdmin
                 ) {
                     AdminDashboardScreen(
                         onNavigateToMap = { navigationManager.navigateToTab(Route.Map) },
@@ -205,8 +265,7 @@ fun AppNavHost() {
                         onNavigateToPlanUsage = { navigationManager.navigateToAdminPlanUsage() },
                         onNavigateToAgentDetail = { agentId -> navigationManager.navigateToAgentDetail(agentId) },
                         onNavigateToMeetingLogs = { navigationManager.navigateToAdminMeetingLogs() },
-                        onNavigateToPinClients = { navigationManager.navigateToAdminPinClients() },
-                        onNavigateToMissingClients = { navigationManager.navigateToMissingClients() }
+                        onNavigateToPinClients = { navigationManager.navigateToAdminPinClients() }
                     )
                 }
             }
@@ -265,10 +324,7 @@ fun AppNavHost() {
             ) {
                 ClientDetailScreen(
                     clientId = args.clientId,
-                    onNavigateBack = navigationManager::navigateBack,
-                    onNavigateToLandmarkSearch = { clientId, clientName ->
-                        navigationManager.navigateToLandmarkSearch(clientId, clientName)
-                    }
+                    onNavigateBack = navigationManager::navigateBack
                 )
             }
         }
@@ -337,17 +393,6 @@ fun AppNavHost() {
                 onNavigateToAuth = navigationManager::navigateToAuth
             ) {
                 AdminPinClientScreen(
-                    onNavigateBack = navigationManager::navigateBack
-                )
-            }
-        }
-
-        composable<Route.MissingClients> {
-            ProtectedRoute(
-                isAuthenticated = session.isAuthenticated,
-                onNavigateToAuth = navigationManager::navigateToAuth
-            ) {
-                MissingClientsScreen(
                     onNavigateBack = navigationManager::navigateBack
                 )
             }

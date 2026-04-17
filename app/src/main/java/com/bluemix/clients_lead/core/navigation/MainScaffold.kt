@@ -37,8 +37,11 @@ fun MainScaffold(
     currentRoute: Route,
     navigationManager: NavigationManager,
     isAdmin: Boolean = false,
+    isSuperAdmin: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val showAdminDashboard = isAdmin || isSuperAdmin  // ✅ Show for both Admin and SuperAdmin
+    
     Scaffold(
         modifier = Modifier.background(AppTheme.colors.background),
         contentWindowInsets = WindowInsets(0),
@@ -46,7 +49,7 @@ fun MainScaffold(
             ModernBottomNavigation(
                 currentRoute = currentRoute,
                 navigationManager = navigationManager,
-                isAdmin = isAdmin
+                showAdminDashboard = showAdminDashboard
             )
         }
     ) { padding ->
@@ -63,7 +66,7 @@ fun MainScaffold(
 private fun ModernBottomNavigation(
     currentRoute: Route,
     navigationManager: NavigationManager,
-    isAdmin: Boolean
+    showAdminDashboard: Boolean
 ) {
     // Top border gradient
     Box(
@@ -91,8 +94,8 @@ private fun ModernBottomNavigation(
             verticalAlignment = Alignment.CenterVertically
         ) {
             bottomNavItems.filter { 
-                // Filter out Admin tab for non-admins
-                if (it.route == Route.AdminDashboard) isAdmin else true
+                // ✅ Show Admin tab for both Admin and SuperAdmin users
+                if (it.route == Route.AdminDashboard) showAdminDashboard else true
             }.forEach { item ->
                 val isSelected = when (currentRoute) {
                     Route.Map -> item.route == Route.Map

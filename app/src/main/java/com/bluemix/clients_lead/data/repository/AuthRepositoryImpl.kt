@@ -32,26 +32,30 @@ class AuthRepositoryImpl(
 
             val deviceId = DeviceIdentifier.getDeviceId(context)
 
-            val response = httpClient.post(ApiEndpoints.Auth.LOGIN) {
+            val rawResponse = httpClient.post(ApiEndpoints.Auth.LOGIN) {
                 setBody(LoginRequest(
                     email = email,
                     password = password,
                     deviceId = deviceId
                 ))
-            }.body<LoginResponse>()
+            }
+
+            Log.d("AUTH", "Login response status: ${rawResponse.status}")
+            val response = rawResponse.body<LoginResponse>()
 
             Log.d("AUTH", "Login successful: ${response.token}")
 
             // Save token immediately
             tokenStorage.saveToken(response.token)
 
-            // ✅ Parse isTrialUser from backend response
+            // ✅ Parse roles from backend response
             val authUser = AuthUser(
                 id = response.user.id,
                 email = response.user.email,
                 token = response.token,
                 isTrialUser = response.user.isTrialUser ?: false,
-                isAdmin = response.user.isAdmin ?: false,          // ✅ ADDED
+                isAdmin = response.user.isAdmin ?: false,
+                isSuperAdmin = response.user.isSuperAdmin ?: false,  // ✅ FROM BACKEND
                 companyId = response.user.companyId,
                 companyName = response.user.companyName
             )
@@ -83,13 +87,14 @@ class AuthRepositoryImpl(
             // Save token immediately
             tokenStorage.saveToken(response.token)
 
-            // ✅ Parse isTrialUser from backend response
+            // ✅ Parse roles from backend response
             val authUser = AuthUser(
                 id = response.user.id,
                 email = response.user.email,
                 token = response.token,
                 isTrialUser = response.user.isTrialUser ?: true,
-                isAdmin = response.user.isAdmin ?: false,          // ✅ ADDED
+                isAdmin = response.user.isAdmin ?: false,
+                isSuperAdmin = response.user.isSuperAdmin ?: false,  // ✅ FROM BACKEND
                 companyId = response.user.companyId,
                 companyName = response.user.companyName
             )
@@ -133,13 +138,14 @@ class AuthRepositoryImpl(
                     return null
                 }
 
-                // ✅ Restore full user data including trial status
+                // ✅ Restore full user data including roles
                 val authUser = AuthUser(
                     id = response.user.id,
                     email = response.user.email,
                     token = token,
                     isTrialUser = response.user.isTrialUser ?: false,
-                    isAdmin = response.user.isAdmin ?: false,          // ✅ ADDED
+                    isAdmin = response.user.isAdmin ?: false,
+                    isSuperAdmin = response.user.isSuperAdmin ?: false,  // ✅ FROM BACKEND
                     companyId = response.user.companyId,
                     companyName = response.user.companyName
                 )
@@ -217,7 +223,8 @@ data class UserData(
     val workHoursStart: String? = null,
     val workHoursEnd: String? = null,
     val isTrialUser: Boolean? = null,
-    val isAdmin: Boolean? = null,          // ✅ ADDED
+    val isAdmin: Boolean? = null,        // ✅ ADDED
+    val isSuperAdmin: Boolean? = null,   // ✅ ADDED
     val companyId: String? = null,
     val companyName: String? = null
 )
@@ -229,7 +236,8 @@ data class UserDataWithProfile(
     val profile: ProfileData? = null,
     val createdAt: String? = null,
     val isTrialUser: Boolean? = null,
-    val isAdmin: Boolean? = null,          // ✅ ADDED
+    val isAdmin: Boolean? = null,        // ✅ ADDED
+    val isSuperAdmin: Boolean? = null,   // ✅ ADDED
     val companyId: String? = null,
     val companyName: String? = null
 )
@@ -247,5 +255,5 @@ data class ProfileData(
 
 @Serializable
 data class ProfileResponse(
-    val user: UserData
+    val user: UserData  // ✅ Already has isAdmin and isSuperAdmin
 )

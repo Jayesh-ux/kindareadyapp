@@ -8,7 +8,8 @@ data class AuthUser(
     val email: String,
     val token: String,
     val isTrialUser: Boolean = false,
-    val isAdmin: Boolean = false,      // ✅ ADDED
+    val isAdmin: Boolean = false,      
+    val isSuperAdmin: Boolean = false,  // ✅ ADDED: For super admin users
     val companyId: String? = null,
     val companyName: String? = null
 )

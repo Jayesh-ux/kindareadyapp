@@ -37,7 +37,6 @@ data class MapUiState(
     val currentLocationLog: LocationLog? = null,
     val selectedClient: Client? = null,
     val selectedAgent: com.bluemix.clients_lead.domain.repository.AgentLocation? = null,
-    val isTrackingEnabled: Boolean = false,
     val isAdmin: Boolean = false,
     val territoryMessage: String? = null,
     val error: String? = null,
@@ -125,24 +124,24 @@ class MapViewModel(
         viewModelScope.launch {
             observeAuthState().collect { user ->
                 val isAdmin = user?.isAdmin ?: false
+                val isSuperAdmin = user?.isSuperAdmin ?: false
+                val isAdminOrSuperAdmin = isAdmin || isSuperAdmin  // ✅ Combined
                 val email = user?.email
-                Timber.d("ðŸ”‘ Auth Update: $email, isAdmin=$isAdmin, companyId=${user?.companyId}")
-                _uiState.update { it.copy(isAdmin = isAdmin, userEmail = email) }
+                Timber.d("ðŸ”‘ Auth Update: $email, isAdmin=$isAdmin, isSuperAdmin=$isSuperAdmin, companyId=${user?.companyId}")
+                _uiState.update { it.copy(isAdmin = isAdminOrSuperAdmin, userEmail = email) }  // ✅ Updated
                 if (!authResolved) {
                     authResolved = true
-                    Timber.d("ðŸš€ Initial Load Triggered (isAdmin=$isAdmin)")
-                    if (isAdmin) {
+                    Timber.d("🚀 Initial Load Triggered (isAdmin=$isAdmin, isSuperAdmin=$isSuperAdmin)")
+                    if (isAdminOrSuperAdmin) {  // ✅ Updated
                         loadClients()
                         startTeamPolling()
                     } else {
-                        if (!locationTrackingStateManager.isCurrentlyTracking()) {
-                            Timber.d("ðŸš€ Auto-starting tracking for agent...")
-                            locationTrackingStateManager.startTracking()
-                        } else {
-                            loadClients()
-                        }
+                        // STRICT: Always start tracking for agents on login/launch
+                        Timber.d("🚀 Mandatory tracking: Auto-starting for agent...")
+                        locationTrackingStateManager.startTracking()
+                        loadClients()
                     }
-                } else if (isAdmin) {
+                } else if (isAdminOrSuperAdmin) {  // ✅ Updated
                     loadClients()
                     startTeamPolling()
                 } else {
@@ -190,11 +189,14 @@ class MapViewModel(
                             longitude = loc.longitude,
                             battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
                             markActivity = "CLOCK_OUT",
-                            markNotes = "Agent ($email) ended work session"
+                            markNotes = "Agent ($email) ended work session (Background tracking remains active)"
                         )
                     }
                 }
-                locationTrackingStateManager.stopTracking()
+                // STRICT: Background location tracking is NOT stopped on clock out.
+                // It only stops on explicit Logout for security/compliance.
+                Timber.d("STRICT: Background tracking continues after clock out")
+                
                 _uiState.update { it.copy(isLoading = false, error = null) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "Failed to Clock Out: ${e.message}") }
@@ -294,11 +296,20 @@ class MapViewModel(
     private fun observeTrackingState() {
         viewModelScope.launch {
             locationTrackingStateManager.trackingState.collect { isTracking ->
-                _uiState.value = _uiState.value.copy(isTrackingEnabled = isTracking)
+                // Flag removed as per STRICT policy
                 if (!authResolved) return@collect
                 if (!isTracking) {
                     val isAdmin = _uiState.value.isAdmin
                     if (!isAdmin) {
+                        // OS-Level Reliability: Check permissions/GPS before auto-restarting
+                        val lManager = com.bluemix.clients_lead.features.location.LocationManager(context)
+                        if (lManager.hasLocationPermission() && lManager.isLocationEnabled()) {
+                            Timber.w("STRICT: Tracking is OFF for agent with valid permissions. Restarting...")
+                            locationTrackingStateManager.startTracking()
+                        } else {
+                            Timber.d("ℹ️ Tracking is disabled due to missing permissions or GPS. Not auto-restarting to avoid loops.")
+                        }
+                        
                         _uiState.update { it.copy(
                             clients = emptyList(),
                             selectedClient = null,
@@ -394,12 +405,6 @@ class MapViewModel(
         locationTrackingStateManager.updateTrackingState()
         requestCurrentLocation()
         loadClients()
-    }
-    fun enableTracking() {
-        viewModelScope.launch {
-            if (!locationTrackingStateManager.isLocationEnabled()) return@launch
-            locationTrackingStateManager.startTracking()
-        }
     }
     fun updateCurrentLocation(location: LatLng, accuracy: Float? = null) {
         _uiState.update { it.copy(
