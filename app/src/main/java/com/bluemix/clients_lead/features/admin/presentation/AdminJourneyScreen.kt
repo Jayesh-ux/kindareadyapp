@@ -759,26 +759,43 @@ private fun SummarySection(uiState: com.bluemix.clients_lead.features.admin.vm.A
                 }
                 
                 if (uiState.logs.isNotEmpty()) {
-                    val start = uiState.logs.first()
-                    val end = uiState.logs.last()
+                    // ✅ FIX: Only show Start Location (first CLOCK_IN)
+                    // Only show End Location if there's a CLOCK_OUT (agent is OFF_DUTY)
+                    val clockIn = uiState.logs.firstOrNull { it.markActivity == "CLOCK_IN" } ?: uiState.logs.firstOrNull()
+                    val clockOut = uiState.logs.lastOrNull { it.markActivity == "CLOCK_OUT" }
                     
                     SummaryItem(
                         icon = Icons.Default.PlayArrow,
                         iconTint = Color(0xFF10B981),
                         title = "Start Location",
-                        time = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(start.timestamp),
-                        address = uiState.resolvedAddresses[start.id] ?: "Resolving..."
+                        time = clockIn?.let { com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(it.timestamp) } ?: "N/A",
+                        address = clockIn?.let { uiState.resolvedAddresses[it.id] } ?: "No location"
                     )
                     
                     androidx.compose.material3.HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
                     
-                    SummaryItem(
-                        icon = Icons.Default.Flag,
-                        iconTint = Color(0xFFF43F5E),
-                        title = "End Location",
-                        time = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(end.timestamp),
-                        address = uiState.resolvedAddresses[end.id] ?: "Resolving..."
-                    )
+                    // ✅ Only show End Location if CLOCK_OUT exists (OFF_DUTY)
+                    if (clockOut != null) {
+                        SummaryItem(
+                            icon = Icons.Default.Flag,
+                            iconTint = Color(0xFFF43F5E),
+                            title = "End Location",
+                            time = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(clockOut.timestamp),
+                            address = uiState.resolvedAddresses[clockOut.id] ?: "Resolving..."
+                        )
+                    } else {
+                        // ON_DUTY - show current location instead
+                        val latestLog = uiState.logs.lastOrNull()
+                        if (latestLog != null) {
+                            SummaryItem(
+                                icon = Icons.Default.MyLocation,
+                                iconTint = Color(0xFF3B82F6),
+                                title = "Current Location",
+                                time = com.bluemix.clients_lead.core.common.utils.DateTimeUtils.formatTimeOnly(latestLog.timestamp),
+                                address = uiState.resolvedAddresses[latestLog.id] ?: "Resolving..."
+                            )
+                        }
+                    }
                 } else {
                     Text("No journey data for summary", color = Color.Gray, style = AppTheme.typography.body2)
                 }

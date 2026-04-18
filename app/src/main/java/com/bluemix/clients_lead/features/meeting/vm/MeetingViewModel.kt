@@ -11,6 +11,7 @@ import com.bluemix.clients_lead.domain.model.ProximityResult
 import com.bluemix.clients_lead.domain.usecases.*
 import com.bluemix.clients_lead.features.location.LocationManager
 import com.bluemix.clients_lead.features.location.BatteryUtils
+import com.bluemix.clients_lead.features.location.LocationTrackingStateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +61,7 @@ class MeetingViewModel(
     private val getCurrentUserId: GetCurrentUserId,
     private val insertLocationLogUseCase: InsertLocationLog,
     private val trackingManager: com.bluemix.clients_lead.features.location.LocationTrackingManager,
+    private val locationTrackingStateManager: LocationTrackingStateManager, // ✅ NEW: Check duty state
     private val context: Context
 ) : ViewModel() {
 
@@ -67,6 +69,9 @@ class MeetingViewModel(
     val uiState: StateFlow<MeetingUiState> = _uiState.asStateFlow()
 
     private val locationManager = LocationManager(context)
+
+    // ✅ NEW: Check if user is ON_DUTY before any meeting operation
+    fun isOnDuty(): Boolean = locationTrackingStateManager.isOnDuty.value
 
     fun checkActiveMeeting(clientId: String) {
         viewModelScope.launch {
@@ -98,6 +103,16 @@ class MeetingViewModel(
         longitude: Double?,
         accuracy: Double?
     ) {
+        // ✅ BLOCK: Cannot start meeting if OFF_DUTY
+        if (!isOnDuty()) {
+            Timber.w("BLOCKED: Cannot start meeting - user is OFF_DUTY")
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                error = "Please Clock In before starting a meeting"
+            )
+            return
+        }
+        
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 

@@ -38,6 +38,7 @@ data class MapUiState(
     val selectedClient: Client? = null,
     val selectedAgent: com.bluemix.clients_lead.domain.repository.AgentLocation? = null,
     val isAdmin: Boolean = false,
+    val isOnDuty: Boolean = false, // ✅ NEW: Track Clock In/Clock Out status
     val territoryMessage: String? = null,
     val error: String? = null,
     val searchQuery: String = "",
@@ -118,6 +119,43 @@ class MapViewModel(
         } catch (e: Exception) {
             Timber.e(e, "Error in observeLocationSettings")
         }
+        
+        try {
+            syncTrackingStateFromBackend()
+        } catch (e: Exception) {
+            Timber.e(e, "Error in syncTrackingStateFromBackend")
+        }
+    }
+    
+    private fun syncTrackingStateFromBackend() {
+        viewModelScope.launch {
+            try {
+                val response = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    locationTrackingStateManager.fetchTrackingStateFromApi()
+                }
+                
+                val trackingUIState = com.bluemix.clients_lead.domain.model.TrackingUIState(
+                    state = when {
+                        !response.isActive -> com.bluemix.clients_lead.domain.model.TrackingState.SESSION_ENDED
+                        response.wasIdle -> com.bluemix.clients_lead.domain.model.TrackingState.IDLE
+                        else -> com.bluemix.clients_lead.domain.model.TrackingState.MOVING
+                    },
+                    battery = null,
+                    batteryStale = false,
+                    validationStatus = if (response.wasIdle) "REJECTED" else "VALID",
+                    idle = response.wasIdle,
+                    sessionState = if (response.isActive) "ACTIVE" else "ENDED",
+                    lastValidated = !response.wasIdle,
+                    lastValidationReason = null,
+                    lastLocationConfidence = "MEDIUM"
+                )
+                
+                locationTrackingStateManager.updateTrackingStateFromBackend(trackingUIState)
+                Timber.d("SYNC: Updated trackingUIState from backend: isActive=${response.isActive}, wasIdle=${response.wasIdle}")
+            } catch (e: Exception) {
+                Timber.e(e, "SYNC: Failed to fetch tracking state from backend")
+            }
+        }
     }
     @Volatile private var authResolved = false
     private fun observeAuth() {
@@ -154,7 +192,13 @@ class MapViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
+                // Start tracking service
                 locationTrackingStateManager.startTracking()
+                
+                // ✅ PERSIST: Set ON_DUTY state persistently
+                locationTrackingStateManager.setOnDuty(true)
+                _uiState.update { it.copy(isOnDuty = true) }
+                
                 // Initial log to mark the start
                 _uiState.value.currentLocation?.let { loc ->
                     getCurrentUserId()?.let { userId ->
@@ -169,6 +213,7 @@ class MapViewModel(
                         )
                     }
                 }
+                Timber.d("CLOCK_IN: Started tracking, isOnDuty=true, persisted to SharedPreferences")
                 _uiState.update { it.copy(isLoading = false, error = null) }
                 loadClients()
             } catch (e: Exception) {
@@ -180,6 +225,7 @@ class MapViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
+                // Log clock out first
                 _uiState.value.currentLocation?.let { loc ->
                     getCurrentUserId()?.let { userId ->
                         val email = _uiState.value.userEmail ?: "Unknown"
@@ -189,15 +235,18 @@ class MapViewModel(
                             longitude = loc.longitude,
                             battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
                             markActivity = "CLOCK_OUT",
-                            markNotes = "Agent ($email) ended work session (Background tracking remains active)"
+                            markNotes = "Agent ($email) ended work session"
                         )
                     }
                 }
-                // STRICT: Background location tracking is NOT stopped on clock out.
-                // It only stops on explicit Logout for security/compliance.
-                Timber.d("STRICT: Background tracking continues after clock out")
                 
-                _uiState.update { it.copy(isLoading = false, error = null) }
+                // CRITICAL: Stop background tracking on Clock Out
+                Timber.d("CLOCK_OUT: Stopping tracking service, isOnDuty=false")
+                locationTrackingStateManager.stopTracking()
+                
+                // ✅ PERSIST: Set OFF_DUTY state persistently
+                locationTrackingStateManager.setOnDuty(false)
+                _uiState.update { it.copy(isOnDuty = false, isLoading = false, error = null) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "Failed to Clock Out: ${e.message}") }
             }
@@ -295,36 +344,68 @@ class MapViewModel(
     }
     private fun observeTrackingState() {
         viewModelScope.launch {
-            locationTrackingStateManager.trackingState.collect { isTracking ->
-                // Flag removed as per STRICT policy
-                if (!authResolved) return@collect
-                if (!isTracking) {
-                    val isAdmin = _uiState.value.isAdmin
-                    if (!isAdmin) {
-                        // OS-Level Reliability: Check permissions/GPS before auto-restarting
-                        val lManager = com.bluemix.clients_lead.features.location.LocationManager(context)
-                        if (lManager.hasLocationPermission() && lManager.isLocationEnabled()) {
-                            Timber.w("STRICT: Tracking is OFF for agent with valid permissions. Restarting...")
-                            locationTrackingStateManager.startTracking()
-                        } else {
-                            Timber.d("ℹ️ Tracking is disabled due to missing permissions or GPS. Not auto-restarting to avoid loops.")
+            // ✅ Observe both tracking state AND persisted isOnDuty state
+            launch {
+                locationTrackingStateManager.trackingState.collect { isTracking ->
+                    if (!authResolved) return@collect
+                    Timber.d("DUTY: trackingState changed to $isTracking")
+                    
+                    // Only update UI if tracking state is false (stopped externally)
+                    // But don't override persisted isOnDuty unless explicitly clocked out
+                    if (!isTracking) {
+                        val isAdmin = _uiState.value.isAdmin
+                        if (!isAdmin) {
+                            val lManager = com.bluemix.clients_lead.features.location.LocationManager(context)
+                            if (lManager.hasLocationPermission() && lManager.isLocationEnabled()) {
+                                // ⚠️ Tracking stopped but permissions OK - could be OS kill
+                                // Check if we should auto-restart based on persisted state
+                                val persistedOnDuty = locationTrackingStateManager.isOnDuty.value
+                                if (persistedOnDuty) {
+                                    Timber.w("DUTY: Service killed by OS but isOnDuty=true, auto-restarting...")
+                                    locationTrackingStateManager.startTracking()
+                                } else {
+                                    Timber.d("DUTY: Tracking disabled (user clocked out)")
+                                    _uiState.update { it.copy(isOnDuty = false) }
+                                }
+                            }
+                            
+                            _uiState.update { it.copy(
+                                clients = emptyList(),
+                                selectedClient = null,
+                                isLoading = false,
+                                error = null,
+                                currentLocation = null,
+                                currentLocationLog = null
+                            ) }
                         }
-                        
+                    }
+                }
+            }
+            
+            // ✅ NEW: Observe backend tracking UI state
+            launch {
+                locationTrackingStateManager.trackingUIState.collect { backendState ->
+                    if (backendState != null) {
+                        Timber.d("MAP: Backend tracking state: ${backendState.state}, validated=${backendState.lastValidated}, idle=${backendState.idle}")
+                        // Use backend state for UI display
+                        // This ensures UI matches backend exactly
                         _uiState.update { it.copy(
-                            clients = emptyList(),
-                            selectedClient = null,
-                            isLoading = false,
-                            error = null,
-                            currentLocation = null,
-                            currentLocationLog = null
+                            isOnDuty = backendState.state != com.bluemix.clients_lead.domain.model.TrackingState.SESSION_ENDED
                         ) }
                     }
-                } else {
-                    loadClients()
+                }
+            }
+            
+            // ✅ Also observe persisted isOnDuty state
+            launch {
+                locationTrackingStateManager.isOnDuty.collect { isOnDuty ->
+                    Timber.d("DUTY: isOnDuty from prefs = $isOnDuty")
+                    _uiState.update { it.copy(isOnDuty = isOnDuty) }
                 }
             }
         }
     }
+    
     fun startJourney(clientId: String, transportMode: String = "Car") {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
@@ -692,15 +773,29 @@ class MapViewModel(
         _uiState.update { it.copy(showAgentRoster = !it.showAgentRoster) }
     }
     fun logout() {
-        // ✅ NEW: Non-blocking logout. Trigger sign-out immediately and fire-and-forget the log.
+        // ✅ FIX: Check if user is ON_DUTY and perform clock out before logout
         _uiState.update { it.copy(isLoading = true) }
         
         val currentLocation = _uiState.value.currentLocation
         val email = _uiState.value.userEmail ?: "Unknown"
-
+        val isOnDuty = locationTrackingStateManager.isOnDuty.value
+        
         viewModelScope.launch(Dispatchers.IO) {
             val userId = getCurrentUserId()
             if (currentLocation != null && userId != null) {
+                // ✅ If ON_DUTY, log as CLOCK_OUT first, then LOGOUT
+                if (isOnDuty) {
+                    insertLocationLogUseCase(
+                        userId = userId,
+                        latitude = currentLocation.latitude,
+                        longitude = currentLocation.longitude,
+                        battery = com.bluemix.clients_lead.features.location.BatteryUtils.getBatteryPercentage(context),
+                        markActivity = "CLOCK_OUT",
+                        markNotes = "Agent ($email) clocked out due to logout"
+                    )
+                }
+                
+                // Then log LOGOUT
                 insertLocationLogUseCase(
                     userId = userId,
                     latitude = currentLocation.latitude,
@@ -709,6 +804,13 @@ class MapViewModel(
                     markActivity = "LOGOUT",
                     markNotes = "Agent ($email) logged out"
                 )
+            }
+            
+            // ✅ FIX: Stop tracking and clear duty state on logout
+            if (isOnDuty) {
+                locationTrackingStateManager.stopTracking()
+                locationTrackingStateManager.setOnDuty(false)
+                Timber.d("LOGOUT: Stopped tracking and cleared duty state")
             }
         }
         

@@ -135,7 +135,7 @@ class ProfileViewModel(
                         it.copy(
                             isLoading = false,
                             profile = profile,
-                            showNameDialog = profile.fullName.isNullOrBlank()
+                            showNameDialog = false
                         )
                     }
                     loadTotalExpense()

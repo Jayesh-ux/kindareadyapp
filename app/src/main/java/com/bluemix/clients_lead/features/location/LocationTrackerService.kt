@@ -74,14 +74,16 @@ class LocationTrackerService : Service() {
     // S11: Idle detection state
     private var lastSignificantMoveTime = System.currentTimeMillis()
     private var isCurrentlyIdle = false
-    private val IDLE_THRESHOLD_MS = 15 * 60 * 1000L // 15 minutes
-    private val IDLE_DISTANCE_THRESHOLD = 50f // meters
+    // FIXED: Match backend thresholds exactly (5 min idle, 50m movement)
+    private val IDLE_THRESHOLD_MS = 5 * 60 * 1000L // 5 minutes - matches backend
+    private val IDLE_DISTANCE_THRESHOLD = 50f // 50 meters - matches backend
 
     // Activity log throttling - only log if significant movement or time passed
     private var lastLoggedLocation: Location? = null
     private var lastLogTime = 0L
-    private val LOG_DISTANCE_THRESHOLD_METERS = 200f // Only log if moved >200m
-    private val LOG_TIME_THRESHOLD_MS = 5 * 60 * 1000L // Or 5 minutes passed
+    // FIXED: Match backend MIN_DISTANCE_METERS = 50
+    private val LOG_DISTANCE_THRESHOLD_METERS = 50f // 50 meters - matches backend validation
+    private val LOG_TIME_THRESHOLD_MS = 10 * 1000L // 10 seconds - matches backend MIN_TIME_DIFF_SECONDS
 
     // S5: SharedPreferences key for persisting state across restarts
     private val PREFS_NAME = "tracker_service_state"
@@ -116,8 +118,8 @@ class LocationTrackerService : Service() {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
     }
 
-    // Configuration
-    private val MIN_DISTANCE_METERS = 200f // breadcrumb every 200m
+    // Configuration - FIXED to match backend exactly
+    private val MIN_DISTANCE_METERS = 50f // 50 meters - matches backend MIN_DISTANCE_METERS
     private val saveInterval = 10 * 60 * 1000L // 10 mins fallback
 
     // Notification components
@@ -307,7 +309,7 @@ class LocationTrackerService : Service() {
                                 }
                             }
                             
-                            var currentActivity: String
+                            var currentActivity: String? = null
                             if (!activeClientId.isNullOrBlank()) {
                                 currentActivity = "TRAVELING"
                                 if (activeClientLat != null && activeClientLng != null) {
@@ -322,13 +324,17 @@ class LocationTrackerService : Service() {
                                     Timber.tag(TAG).d("📏 Distance to client $activeClientId: ${distanceToClient}m. Activity: $currentActivity")
                                 }
                             } else {
-                                currentActivity = "ON_DUTY"
+                                // ✅ FIX: Don't log ON_DUTY on every breadcrumb
+                                // CLOCK_IN already marks the session start, CLOCK_OUT marks the end
+                                // Only log when user has an active journey, otherwise skip
+                                currentActivity = null // No activity to log when no journey
                             }
                             
+                            // ✅ FIX: Only log when there's an actual activity
+                            // Skip logging when currentActivity is null (no active journey)
                             val breadcrumbNote = when (currentActivity) {
                                 "TRAVELING" -> "Heading to ${activeClientName ?: activeClientId} via ${transportMode ?: "Car"}"
                                 "AT_CLIENT_SITE" -> "At ${activeClientName ?: activeClientId} site"
-                                "ON_DUTY" -> "On duty - no active journey"
                                 else -> null
                             }
 
@@ -336,9 +342,12 @@ class LocationTrackerService : Service() {
                             val distanceFromLastLog = lastLoggedLocation?.let { trackingLocation.distanceTo(it) } ?: Float.MAX_VALUE
                             val timeSinceLastLog = currentTime - lastLogTime
                             
-                            val shouldLog = lastLoggedLocation == null || 
-                                         distanceFromLastLog > LOG_DISTANCE_THRESHOLD_METERS || 
-                                         timeSinceLastLog > LOG_TIME_THRESHOLD_MS
+                            // ✅ FIX: Only log if there's an actual activity (not null)
+                            val shouldLog = currentActivity != null && (
+                                lastLoggedLocation == null || 
+                                distanceFromLastLog > LOG_DISTANCE_THRESHOLD_METERS || 
+                                timeSinceLastLog > LOG_TIME_THRESHOLD_MS
+                            )
                             
                             if (shouldLog) {
                                 scope.launch {
@@ -429,6 +438,13 @@ class LocationTrackerService : Service() {
         locationTrackingJob?.cancel()
         periodicSaveJob?.cancel()
 
+        // ✅ FIX: Clear all state including active journey
+        activeClientId = null
+        activeClientName = null
+        transportMode = null
+        activeClientLat = null
+        activeClientLng = null
+        
         // Clear references and persisted state
         latestLocation = null
         clearPersistedState() // S5: clean up on explicit stop

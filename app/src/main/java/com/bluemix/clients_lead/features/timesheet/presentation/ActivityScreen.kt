@@ -43,6 +43,7 @@ import ui.components.topbar.TopBarDefaults
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -356,6 +357,28 @@ private fun MeetingCard(meeting: Meeting) {
                 }
             }
 
+            // Attachments (if any)
+            if (!meeting.attachments.isNullOrEmpty()) {
+                androidx.compose.material3.HorizontalDivider(color = AppTheme.colors.outline.copy(alpha = 0.3f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AttachFile,
+                        contentDescription = null,
+                        tint = AppTheme.colors.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "${meeting.attachments.size} attachment${if (meeting.attachments.size > 1) "s" else ""}",
+                        style = AppTheme.typography.body3,
+                        color = AppTheme.colors.primary
+                    )
+                }
+            }
+
             // Comments (if any)
             if (!meeting.comments.isNullOrBlank()) {
                 androidx.compose.material3.HorizontalDivider(color = AppTheme.colors.outline.copy(alpha = 0.3f))
@@ -658,6 +681,103 @@ private fun AnimatedActivityContent(paddingValues: PaddingValues, logs: List<Loc
                         color = AppTheme.colors.primary,
                         strokeWidth = 2.dp
                     )
+                }
+            }
+        }
+        
+        // ✅ MEETINGS SECTION
+        if (uiState.meetings.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Meetings",
+                    style = AppTheme.typography.h4,
+                    color = AppTheme.colors.textSecondary,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                )
+            }
+            items(uiState.meetings.size) { index ->
+                val meeting = uiState.meetings[index]
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppTheme.colors.surface)
+                        .padding(12.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = meeting.clientName ?: "Meeting",
+                            style = AppTheme.typography.body1,
+                            color = AppTheme.colors.text
+                        )
+                        if (!meeting.comments.isNullOrBlank()) {
+                            Text(
+                                text = meeting.comments,
+                                style = AppTheme.typography.body2,
+                                color = AppTheme.colors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ✅ EXPENSES SECTION
+        if (uiState.expenses.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Expenses",
+                    style = AppTheme.typography.h4,
+                    color = AppTheme.colors.textSecondary,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                )
+            }
+            items(uiState.expenses.size) { index ->
+                val expense = uiState.expenses[index]
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppTheme.colors.surface)
+                        .padding(12.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "₹ ${String.format("%.0f", expense.amountSpent)}",
+                                style = AppTheme.typography.body1,
+                                color = AppTheme.colors.text,
+                                fontWeight = FontWeight.Bold
+                            )
+                            expense.transportMode?.let {
+                                Text(
+                                    text = it.name,
+                                    style = AppTheme.typography.body2,
+                                    color = AppTheme.colors.textSecondary
+                                )
+                            }
+                        }
+                        if (!expense.notes.isNullOrBlank()) {
+                            Text(
+                                text = expense.notes,
+                                style = AppTheme.typography.body2,
+                                color = AppTheme.colors.textSecondary
+                            )
+                        }
+                        if (expense.receiptImages.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            AsyncImage(
+                                model = "data:image/jpeg;base64,${expense.receiptImages.first()}",
+                                contentDescription = "Receipt",
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        }
+                    }
                 }
             }
         }

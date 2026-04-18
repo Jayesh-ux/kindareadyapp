@@ -17,7 +17,7 @@ data class AdminClientServicesUiState(
     val services: List<ClientService> = emptyList(),
     val filteredServices: List<ClientService> = emptyList(),
     val searchQuery: String = "",
-    val totalRevenue: String = "₹71.4K",
+    val totalRevenue: String = "₹0",
     val activeCount: Int = 0,
     val expiringCount: Int = 0,
     val expiredCount: Int = 0,
@@ -41,6 +41,12 @@ class AdminClientServicesViewModel(
             when (val result = getClientServices(null)) {
                 is AppResult.Success -> {
                     val data = result.data
+                    val revenue = data.sumOf { s -> s.price?.toDoubleOrNull() ?: 0.0 }
+                    val revenueStr = when {
+                        revenue >= 1_00_000 -> "₹${String.format("%.1f", revenue / 1_00_000)}M"
+                        revenue >= 1_000 -> "₹${String.format("%.1f", revenue / 1_000)}K"
+                        else -> "₹${revenue.toInt()}"
+                    }
                     _uiState.update { 
                         it.copy(
                             isLoading = false,
@@ -49,7 +55,8 @@ class AdminClientServicesViewModel(
                             totalCount = data.size,
                             activeCount = data.count { s -> s.status == "active" },
                             expiringCount = data.count { s -> s.daysLeft in 0..30 },
-                            expiredCount = data.count { s -> s.daysLeft < 0 }
+                            expiredCount = data.count { s -> s.daysLeft < 0 },
+                            totalRevenue = revenueStr
                         )
                     }
                     if (_uiState.value.searchQuery.isNotEmpty()) {

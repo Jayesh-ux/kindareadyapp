@@ -17,6 +17,7 @@ import io.ktor.client.request.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import timber.log.Timber
 
 /**
  * Updated LocationRepository using REST API instead of Supabase
@@ -163,6 +164,15 @@ class LocationRepositoryImpl(
                 Unit
             }
         }
+
+    override suspend fun fetchTrackingState(): TrackingStateResponse = withContext(Dispatchers.IO) {
+        try {
+            httpClient.get(ApiEndpoints.Location.TRACKING_STATE).body<TrackingStateResponse>()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to fetch tracking state")
+            TrackingStateResponse(isActive = false, isPaused = false, wasIdle = false)
+        }
+    }
 }
 
 // ==================== Request Models ====================
@@ -212,6 +222,22 @@ data class BackendLocationLog(
 data class LocationPaginationData(
     val page: Int,
     val limit: Int
+)
+
+@Serializable
+data class TrackingStateResponse(
+    val isActive: Boolean = false,
+    val isPaused: Boolean = false,
+    val wasIdle: Boolean = false,
+    val lastValidLocation: LastValidLocationDto? = null,
+    val consecutiveInvalid: Int = 0
+)
+
+@Serializable
+data class LastValidLocationDto(
+    val lat: Double,
+    val lng: Double,
+    val timestamp: String
 )
 
 // ==================== Mapping Functions ====================

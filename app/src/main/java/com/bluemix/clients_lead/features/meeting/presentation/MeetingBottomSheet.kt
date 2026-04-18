@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1171,38 +1173,58 @@ private fun TransportModeSelector(
     selectedMode: String,
     onModeChange: (String) -> Unit
 ) {
-    val modes = listOf(
-        Quad("🚗", "Car", Color(0xFF5E92F3), "Car"),
-        Quad("🏍️", "Bike", Color(0xFFFFCA28), "Bike"),
-        Quad("🚌", "Bus", Color(0xFF66BB6A), "Bus"),
-        Quad("🛺", "Auto", Color(0xFFAB47BC), "Auto"),
-        Quad("🚶", "Walk", Color(0xFFB0B0B0), "Walk")
+    val transportOptions = listOf(
+        Triple("Car",  "🚗", "Car"),
+        Triple("Bike", "🏍️", "Bike"),
+        Triple("Bus",  "🚌", "Bus"),
+        Triple("Auto", "🛺", "Auto"),
+        Triple("Taxi", "🚕", "Taxi")
     )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        modes.forEach { (icon, label, color, value) ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (selectedMode == value) color.copy(alpha = 0.2f) else Color(0xFF1A1A1A))
-                    .clickable { onModeChange(value) }
-                    .padding(4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(icon, fontSize = 16.sp)
+    
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Select Transport",
+            style = AppTheme.typography.body2,
+            color = AppTheme.colors.textSecondary,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+        
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            transportOptions.forEach { (mode, emoji, label) ->
+                val isSelected = selectedMode == mode
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isSelected) Color(0xFF1A3A6B)
+                            else Color(0xFF1E293B)
+                        )
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) Color(0xFF3B82F6)
+                                    else Color(0xFF334155),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .clickable { onModeChange(mode) }
+                        .padding(vertical = 10.dp, horizontal = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(text = emoji, fontSize = 22.sp)
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = label, 
-                        style = AppTheme.typography.label2, 
-                        color = if (selectedMode == value) color else Color.Gray,
-                        fontSize = 10.sp
+                        text = label,
+                        fontSize = 10.sp,
+                        color = if (isSelected) Color(0xFF3B82F6)
+                                else Color(0xFF9CA3AF),
+                        fontWeight = if (isSelected) FontWeight.SemiBold
+                                     else FontWeight.Normal,
+                        maxLines = 1
                     )
                 }
             }

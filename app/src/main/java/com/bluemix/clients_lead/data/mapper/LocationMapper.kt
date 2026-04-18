@@ -9,16 +9,26 @@ fun LocationLogDto.toDomain(): LocationLog {
         id = id ?: "",
         userId = userId,
         userEmail = userEmail,
+        companyName = companyName,
         latitude = latitude,
         longitude = longitude,
         accuracy = accuracy,
         timestamp = timestamp ?: "",
         createdAt = createdAt ?: "",
         battery = battery,
+        batteryStale = batteryStale,
         markActivity = markActivity,
         markNotes = markNotes,
         clientId = clientId,
-        clientName = LocationLog.parseClientName(markNotes) // S12: Structured parse
+        clientName = LocationLog.parseClientName(markNotes),
+        distanceDelta = distanceDelta,
+        speedKmh = speedKmh,
+        validated = validated,
+        validationReason = validationReason,
+        locationConfidence = locationConfidence,
+        isInitial = isInitial,
+        idleStateFlag = idleStateFlag,
+        transportMode = transportMode
     )
 }
 

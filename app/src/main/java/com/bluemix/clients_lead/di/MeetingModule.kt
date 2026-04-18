@@ -32,6 +32,7 @@ val meetingModule = module {
             getCurrentUserId = get(),
             insertLocationLogUseCase = get(), // ✅ NEW
             trackingManager = get(),       // ✅ NEW
+            locationTrackingStateManager = get(), // ✅ NEW: Check duty state
             context = androidContext()
         )
     }

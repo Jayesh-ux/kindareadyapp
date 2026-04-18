@@ -2,6 +2,7 @@ package com.bluemix.clients_lead.domain.repository
 
 import com.bluemix.clients_lead.domain.model.LocationLog
 import com.bluemix.clients_lead.core.common.utils.AppResult
+import com.bluemix.clients_lead.data.repository.TrackingStateResponse
 //interface ILocationRepository {
 //
 //    /**
@@ -84,4 +85,6 @@ interface ILocationRepository {
     suspend fun deleteOldLogs(olderThanDays: Int): AppResult<Int>
 
     suspend fun clearAllLogs(): AppResult<Unit>
+
+    suspend fun fetchTrackingState(): TrackingStateResponse
 }

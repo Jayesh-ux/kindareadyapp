@@ -111,11 +111,7 @@ fun ProfileScreen(
         show = uiState.showNameDialog,
         currentName = uiState.profile?.fullName,
         isLoading = uiState.isUpdatingName,
-        onDismiss = {
-            if (!uiState.profile?.fullName.isNullOrBlank()) {
-                viewModel.hideNameDialog()
-            }
-        },
+        onDismiss = { viewModel.hideNameDialog() },
         onSave = { newName ->
             viewModel.updateName(newName)
         }
@@ -717,14 +713,15 @@ private fun AnimatedLogoutDialog(
     }
 }
 
-private fun formatDate(dateString: String): String {
+private fun formatDate(dateString: String?): String {
+    if (dateString.isNullOrBlank()) return "—"
     return try {
         val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
         val outputFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
         val date = inputFormat.parse(dateString)
         outputFormat.format(date ?: Date())
     } catch (e: Exception) {
-        "Unknown"
+        "—"
     }
 }
 

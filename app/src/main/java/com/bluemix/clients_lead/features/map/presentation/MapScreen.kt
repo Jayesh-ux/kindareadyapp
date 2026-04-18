@@ -642,8 +642,8 @@ fun MapScreen(
                     }
                 }
 
-                // ✅ Mandatory Tracking Overlay: Only show if permissions are missing or GPS is off
-                if (!uiState.isAdmin && (!locationPermissions.allPermissionsGranted || !isLocationEnabled) && !uiState.isLoading) {
+                // ✅ Mandatory Tracking Overlay: Show if OFF_DUTY (needs to clock in) OR permissions missing OR GPS off
+                if (!uiState.isAdmin && (!uiState.isOnDuty || !locationPermissions.allPermissionsGranted || !isLocationEnabled) && !uiState.isLoading) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -728,8 +728,17 @@ fun MapScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(18.dp), tint = AppTheme.colors.onPrimary)
-                                        Text("Clock In & Enable Map", fontWeight = FontWeight.Bold, color = AppTheme.colors.onPrimary)
+                                        Icon(
+                                            if (uiState.isOnDuty) Icons.Default.CheckCircle else Icons.Default.FlashOn, 
+                                            contentDescription = null, 
+                                            modifier = Modifier.size(18.dp), 
+                                            tint = AppTheme.colors.onPrimary
+                                        )
+                                        Text(
+                                            if (uiState.isOnDuty) "Enable Tracking" else "Clock In & Start Working", 
+                                            fontWeight = FontWeight.Bold, 
+                                            color = AppTheme.colors.onPrimary
+                                        )
                                     }
                                 }
                                 
@@ -1049,7 +1058,7 @@ fun MapScreen(
 
                     // ✅ FIXED OVERLAP: Legend inside Managed Stack
                     AnimatedVisibility(
-                        visible = true,
+                        visible = !showMeetingSheet,
                         enter = fadeIn() + expandVertically(),
                         exit = fadeOut() + shrinkVertically()
                     ) {
@@ -1107,6 +1116,7 @@ fun MapScreen(
                             onStartJourney = { clientId, mode -> viewModel.startJourney(clientId, mode) },
                             onStopJourney = { viewModel.stopJourney() },
                             onStartMeeting = {
+                                // ✅ BLOCK: Cannot start meeting if OFF_DUTY - delegate to ViewModel
                                 meetingViewModel.startMeeting(
                                     clientId = client.id,
                                     latitude = uiState.currentLocation?.latitude,
@@ -1359,9 +1369,9 @@ fun MapScreen(
                     )
                 }
 
-                // Clock Out Button (Visible when tracking is ON)
+                // Clock Out Button (Visible only when ON_DUTY)
                 AnimatedVisibility(
-                    visible = !uiState.isAdmin,
+                    visible = !uiState.isAdmin && uiState.isOnDuty,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(bottom = 16.dp, start = 16.dp),
@@ -1811,25 +1821,82 @@ fun AnimatedClientBottomSheet(
                             )
                         }
                     } else if (isAgent && !isLocationUnavailable && onStartJourney != null) {
-                        // ✅ NEW: Start Journey button for agents (when not within proximity)
-                        Button(
-                            onClick = { onStartJourney?.invoke(client.id, "Car") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF6366F1) // Indigo
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DirectionsCar,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                        // ✅ FIX: Transport mode - icon grid selection
+                        var selectedMode by remember { mutableStateOf("Car") }
+                        
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = "Start Journey",
-                                style = AppTheme.typography.button
+                                text = "Select transport mode",
+                                style = AppTheme.typography.body2,
+                                color = AppTheme.colors.textSecondary,
+                                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
                             )
+                            
+                            val transportOptions = listOf(
+                                Triple("Car",  "🚗", "Car"),
+                                Triple("Bike", "🏍️", "Bike"),
+                                Triple("Bus",  "🚌", "Bus"),
+                                Triple("Auto", "🛺", "Auto"),
+                                Triple("Taxi", "🚕", "Taxi")
+                            )
+                            
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                transportOptions.forEach { (mode, emoji, label) ->
+                                    val isSelected = selectedMode == mode
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(
+                                                if (isSelected) Color(0xFF1A3A6B)
+                                                else Color(0xFF1E293B)
+                                            )
+                                            .border(
+                                                width = if (isSelected) 2.dp else 1.dp,
+                                                color = if (isSelected) Color(0xFF3B82F6)
+                                                        else Color(0xFF334155),
+                                                shape = RoundedCornerShape(10.dp)
+                                            )
+                                            .clickable { selectedMode = mode }
+                                            .padding(vertical = 10.dp, horizontal = 2.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(text = emoji, fontSize = 22.sp)
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = label,
+                                            fontSize = 10.sp,
+                                            color = if (isSelected) Color(0xFF3B82F6)
+                                                    else Color(0xFF9CA3AF),
+                                            fontWeight = if (isSelected) FontWeight.SemiBold
+                                                         else FontWeight.Normal,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Button(
+                                onClick = { onStartJourney?.invoke(client.id, selectedMode) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF6366F1)
+                                )
+                            ) {
+                                Text(
+                                    text = "Start Journey ($selectedMode)",
+                                    style = AppTheme.typography.button,
+                                    color = Color.White
+                                )
+                            }
                         }
                     } else {
                         // Informational warning with distance or status

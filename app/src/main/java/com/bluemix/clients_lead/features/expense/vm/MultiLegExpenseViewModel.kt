@@ -40,6 +40,9 @@ import java.io.ByteArrayOutputStream
 data class TripLegUiModel(
     val id: String = UUID.randomUUID().toString(),
     val startLocation: LocationPlace? = null,
+    val startLocationQuery: String = "",
+    val startSearchResults: List<LocationPlace> = emptyList(),
+    val isSearchingStartLocation: Boolean = false,
     val endLocation: LocationPlace? = null,
     val endLocationQuery: String = "",
     val searchResults: List<LocationPlace> = emptyList(),
@@ -47,10 +50,9 @@ data class TripLegUiModel(
     val distanceKm: Double = 0.0,
     val transportMode: TransportMode = TransportMode.BUS,
     val amountSpent: Double = 0.0,
-    val amountSpentString: String = "", // ✅ NEW: UI-friendly string state
+    val amountSpentString: String = "",
     val notes: String = "",
     val legNumber: Int,
-    // ✅ NEW: Route visualization data
     val routePolyline: List<LatLng>? = null,
     val estimatedDuration: Int = 0
 )
@@ -412,7 +414,7 @@ class MultiLegExpenseViewModel(
         }
     }
 
-    fun selectEndLocationForLeg(legIndex: Int, location: LocationPlace) {
+fun selectEndLocationForLeg(legIndex: Int, location: LocationPlace) {
         updateLeg(legIndex) {
             it.copy(
                 endLocation = location,
@@ -423,6 +425,41 @@ class MultiLegExpenseViewModel(
         calculateDistanceForLeg(legIndex)
     }
 
+    fun searchStartLocationForLeg(legIndex: Int, query: String) {
+        updateLeg(legIndex) { it.copy(startLocationQuery = query) }
+
+        if (query.length < 3) {
+            updateLeg(legIndex) { it.copy(startSearchResults = emptyList()) }
+            return
+        }
+
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(500)
+            updateLeg(legIndex) { it.copy(isSearchingStartLocation = true) }
+
+            val results = locationSearchRepo.searchPlaces(query)
+
+            updateLeg(legIndex) {
+                it.copy(
+                    startSearchResults = results,
+                    isSearchingStartLocation = false
+                )
+            }
+        }
+    }
+
+    fun selectStartLocationForLeg(legIndex: Int, location: LocationPlace) {
+        updateLeg(legIndex) {
+            it.copy(
+                startLocation = location,
+                startLocationQuery = location.displayName,
+                startSearchResults = emptyList()
+            )
+        }
+        calculateDistanceForLeg(legIndex)
+    }
+    
     // ============================================
     // LEG PROPERTY UPDATES
     // ============================================

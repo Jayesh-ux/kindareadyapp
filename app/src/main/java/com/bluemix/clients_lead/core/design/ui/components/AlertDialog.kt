@@ -417,9 +417,9 @@ fun AlertDialogPreviews() {
                 text = "This is a basic alert dialog with default buttons",
                 confirmButtonText = "OK",
                 dismissButtonText = "Cancel",
-                containerColor = Color.White,
-                titleContentColor = Color.Black,
-                textContentColor = Color.DarkGray,
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color(0xFF94A3B8),
             )
         }
 
@@ -431,9 +431,9 @@ fun AlertDialogPreviews() {
                 text = "This alert only has a confirmation button",
                 confirmButtonText = "Got it",
                 dismissButtonText = null, // Removes the dismiss button
-                containerColor = Color.White,
-                titleContentColor = Color.Black,
-                textContentColor = Color.DarkGray,
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color(0xFF94A3B8),
             )
         }
 
@@ -449,9 +449,9 @@ fun AlertDialogPreviews() {
                         "displaying terms and conditions or detailed information to users.",
                 confirmButtonText = "Accept",
                 dismissButtonText = "Decline",
-                containerColor = Color.White,
-                titleContentColor = Color.Black,
-                textContentColor = Color.DarkGray,
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color(0xFF94A3B8),
             )
         }
     }

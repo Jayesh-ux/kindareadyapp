@@ -78,6 +78,7 @@ object ApiEndpoints {
     object Location {
         const val LOGS = "/location-logs"
         const val CLEAR_ALL = "/location-logs/clear-all"
+        const val TRACKING_STATE = "/location/tracking-state"
     }
 
     /**

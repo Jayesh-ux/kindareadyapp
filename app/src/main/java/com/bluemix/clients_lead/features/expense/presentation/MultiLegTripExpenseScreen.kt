@@ -484,25 +484,40 @@ private fun LegEditor(
     isLoadingLocation: Boolean
 ) {
     SectionCard(title = "Leg ${leg.legNumber} Details") {
+        val isLeg1 = legIndex == 0
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // START LOCATION
-            OutlinedTextField(
-                value = leg.startLocation?.displayName ?: "",
-                onValueChange = {},
-                label = { Text("Start Location", color = Color(0xFFB0B0B0)) },
-                enabled = false,
-                leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = Color(0xFF5E92F3)) },
-                trailingIcon = {
-                    if (isLoadingLocation) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color(0xFF5E92F3))
-                    } else {
-                        IconButton(onClick = { viewModel.loadCurrentLocationForLeg(legIndex) }) {
-                            Icon(Icons.Default.MyLocation, "Get location", tint = Color(0xFF5E92F3))
+            // START LOCATION with search
+            Box {
+                OutlinedTextField(
+                    value = leg.startLocation?.displayName ?: leg.startLocationQuery,
+                    onValueChange = { viewModel.searchStartLocationForLeg(legIndex, it) },
+                    label = { Text("Start Location", color = Color(0xFFB0B0B0)) },
+                    placeholder = { Text("Search location...", color = Color(0xFF606060)) },
+                    enabled = true,
+                    leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = Color(0xFF5E92F3)) },
+                    trailingIcon = {
+                        if (isLeg1) {
+                            if (isLoadingLocation) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color(0xFF5E92F3))
+                            } else {
+                                IconButton(onClick = { viewModel.loadCurrentLocationForLeg(legIndex) }) {
+                                    Icon(Icons.Default.MyLocation, "Get location", tint = Color(0xFF5E92F3))
+                                }
+                            }
                         }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            
+            // Auto-fill hint for leg 2+
+            if (!isLeg1 && leg.startLocation != null) {
+                Text(
+                    text = "Start auto-filled from previous leg (editable)",
+                    style = AppTheme.typography.label3,
+                    color = Color(0xFF64748B)
+                )
+            }
 
             // END LOCATION with search
             Box {
@@ -569,10 +584,58 @@ private fun LegEditor(
 
             // TRANSPORT MODE
             Text("Transport Mode", style = AppTheme.typography.body1, color = Color.White)
-            TransportModeGrid(
-                selectedMode = leg.transportMode,
-                onModeSelected = { viewModel.updateLegTransportMode(legIndex, it) }
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TransportModeChip(
+                    icon = Icons.Default.DirectionsCar,
+                    label = "Car",
+                    isSelected = leg.transportMode == TransportMode.CAR,
+                    onClick = { viewModel.updateLegTransportMode(legIndex, TransportMode.CAR) },
+                    modifier = Modifier.weight(1f)
+                )
+                TransportModeChip(
+                    icon = Icons.Default.DirectionsBike,
+                    label = "Bike",
+                    isSelected = leg.transportMode == TransportMode.BIKE,
+                    onClick = { viewModel.updateLegTransportMode(legIndex, TransportMode.BIKE) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TransportModeChip(
+                    icon = Icons.Default.LocalTaxi,
+                    label = "Taxi",
+                    isSelected = leg.transportMode == TransportMode.TAXI,
+                    onClick = { viewModel.updateLegTransportMode(legIndex, TransportMode.TAXI) },
+                    modifier = Modifier.weight(1f)
+                )
+                TransportModeChip(
+                    icon = Icons.Default.DirectionsBus,
+                    label = "Bus",
+                    isSelected = leg.transportMode == TransportMode.BUS,
+                    onClick = { viewModel.updateLegTransportMode(legIndex, TransportMode.BUS) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TransportModeChip(
+                    icon = Icons.Default.ElectricRickshaw,
+                    label = "Auto",
+                    isSelected = leg.transportMode == TransportMode.AUTO,
+                    onClick = { viewModel.updateLegTransportMode(legIndex, TransportMode.AUTO) },
+                    modifier = Modifier.weight(1f)
+                )
+                // Empty placeholder for alignment
+                Spacer(modifier = Modifier.weight(1f))
+            }
 
             // AMOUNT
             OutlinedTextField(
@@ -603,28 +666,51 @@ private fun TransportModeGrid(
     selectedMode: TransportMode,
     onModeSelected: (TransportMode) -> Unit
 ) {
-    val modes = listOf(
-        TransportMode.FLIGHT to Icons.Default.Flight,
-        TransportMode.TRAIN to Icons.Default.Train,
-        TransportMode.BUS to Icons.Default.DirectionsBus,
-        TransportMode.TAXI to Icons.Default.LocalTaxi,
-        TransportMode.CAR to Icons.Default.DirectionsCar,
-        TransportMode.BIKE to Icons.Default.DirectionsBike
-    )
-
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.height(140.dp)
-    ) {
-        items(modes) { (mode, icon) ->
-            TransportModeCard(
-                icon = icon,
-                label = mode.name,
-                isSelected = selectedMode == mode,
-                onClick = { onModeSelected(mode) }
+    var expanded by remember { mutableStateOf(false) }
+    val modes = listOf(TransportMode.CAR, TransportMode.BIKE, TransportMode.AUTO, TransportMode.BUS, TransportMode.TAXI)
+    
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color(0xFF1E293B),
+                contentColor = Color.White
             )
+        ) {
+            Text(
+                text = selectedMode.name.ifEmpty { "Select Transport" },
+                modifier = Modifier.weight(1f)
+            )
+            Icon(Icons.Default.ArrowDropDown, null, tint = Color(0xFF94A3B8))
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1E293B))
+        ) {
+            modes.forEach { mode ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = mode.name,
+                            color = if (selectedMode == mode) Color(0xFF3B82F6) else Color.White
+                        )
+                    },
+                    onClick = {
+                        onModeSelected(mode)
+                        expanded = false
+                    },
+                    leadingIcon = {
+                        if (selectedMode == mode) {
+                            Icon(Icons.Default.Check, null, tint = Color(0xFF3B82F6))
+                        }
+                    }
+                )
+            }
         }
     }
 }

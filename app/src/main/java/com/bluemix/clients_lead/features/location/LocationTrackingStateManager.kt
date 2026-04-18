@@ -15,9 +15,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.request.*
 import kotlinx.coroutines.launch
 import androidx.work.*
 import java.util.concurrent.TimeUnit
+import com.bluemix.clients_lead.domain.model.TrackingUIState
 /**
  * Centralized manager for location tracking state.
  *
@@ -29,6 +33,11 @@ class LocationTrackingStateManager(
     private val appContext: Context,
     private val trackingManager: LocationTrackingManager   // <-- injected small manager
 ) {
+
+    // ✅ NEW: Persistent duty state (survives navigation/restart)
+    private val PREFS_NAME = "duty_state_prefs"
+    private val PREF_IS_ON_DUTY = "is_on_duty"
+    private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     // ✅ FIXED: Class-level scope so it can be cancelled in cleanup() to prevent leaks
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -44,11 +53,48 @@ class LocationTrackingStateManager(
     private val _permissionState = MutableStateFlow(true)
     val permissionState: StateFlow<Boolean> = _permissionState.asStateFlow()
 
+    // ✅ NEW: Expose isOnDuty state persistently
+    private val _isOnDuty = MutableStateFlow(prefs.getBoolean(PREF_IS_ON_DUTY, false))
+    val isOnDuty: StateFlow<Boolean> = _isOnDuty.asStateFlow()
+
+    // ✅ NEW: Backend-synced tracking UI state
+    private val _trackingUIState = MutableStateFlow<TrackingUIState?>(null)
+    val trackingUIState: StateFlow<TrackingUIState?> = _trackingUIState.asStateFlow()
+
     init {
+        // ✅ Load persisted duty state
+        _isOnDuty.value = prefs.getBoolean(PREF_IS_ON_DUTY, false)
+        Timber.d("DUTY: Loaded persisted state isOnDuty=${_isOnDuty.value}")
+        
         updateTrackingState()
         startLocationSettingsMonitoring()
         updatePermissionState()
         scheduleHealthCheck()
+    }
+
+    // ✅ NEW: Save duty state persistently
+    fun setOnDuty(onDuty: Boolean) {
+        _isOnDuty.value = onDuty
+        prefs.edit().putBoolean(PREF_IS_ON_DUTY, onDuty).apply()
+        Timber.d("DUTY: Saved isOnDuty=$onDuty to SharedPreferences")
+    }
+
+    // ✅ Already exists at line 228: updateTrackingUIState
+    // This method is called from MapViewModel to sync backend state
+    fun updateTrackingStateFromBackend(state: TrackingUIState) {
+        _trackingUIState.value = state
+        Timber.tag(TAG).d("SYNC: Updated from backend: state=${state.state}")
+    }
+    
+    // ✅ NEW: Fetch tracking state from API (suspend)
+    suspend fun fetchTrackingStateFromApi(): com.bluemix.clients_lead.data.repository.TrackingStateResponse {
+        val client = HttpClient()
+        try {
+            return client.get(com.bluemix.clients_lead.core.network.ApiEndpoints.Location.TRACKING_STATE)
+                .body<com.bluemix.clients_lead.data.repository.TrackingStateResponse>()
+        } finally {
+            client.close()
+        }
     }
 
     private fun scheduleHealthCheck() {
@@ -160,6 +206,9 @@ class LocationTrackingStateManager(
         }
 
         try {
+            // ✅ FIX: Clear active client before stopping tracking
+            trackingManager.updateActiveClient(null, null, null, null, null)
+            
             trackingManager.stopTracking()
             Timber.tag(TAG).d("➡️ Forwarded STOP to LocationTrackingManager")
 
@@ -189,6 +238,15 @@ class LocationTrackingStateManager(
         Timber.tag(TAG).d("Tracking state refreshed from system. isRunning = $running")
         _trackingState.value = running
     }
+
+    // ✅ NEW: Update UI state from backend response
+    fun updateTrackingUIState(state: TrackingUIState) {
+        _trackingUIState.value = state
+        Timber.tag(TAG).d("TrackingUIState updated: ${state.state}, validated=${state.lastValidated}, idle=${state.idle}")
+    }
+
+    // ✅ NEW: Get current tracking UI state
+    fun getTrackingUIState(): TrackingUIState? = _trackingUIState.value
 
     private fun hasLocationPermissions(): Boolean {
         val fine = ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED

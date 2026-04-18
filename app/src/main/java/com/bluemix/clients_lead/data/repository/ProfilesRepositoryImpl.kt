@@ -186,8 +186,8 @@ fun BackendUserProfile.toProfileDto(): ProfileDto {
         workHoursEnd = this.workHoursEnd,
         lastSeen = this.lastSeen,
         batteryPercentage = this.batteryPercentage,
-        currentActivity = this.currentActivity,
-        createdAt = this.createdAt ?: "",
+currentActivity = this.currentActivity,
+        createdAt = this.createdAt?.takeIf { it.isNotBlank() && it != "Unknown" } ?: "",
         updatedAt = null
     )
 }
@@ -197,7 +197,7 @@ fun BackendUserProfile.toProfileDto(): ProfileDto {
  */
 fun BackendProfileData.toProfileDto(): ProfileDto {
     return ProfileDto(
-        id = this.userId, // or this.id - check what your backend actually returns
+        id = this.userId,
         email = this.email,
         fullName = this.fullName,
         department = this.department,
@@ -206,7 +206,7 @@ fun BackendProfileData.toProfileDto(): ProfileDto {
         lastSeen = this.lastSeen,
         batteryPercentage = this.batteryPercentage,
         currentActivity = this.currentActivity,
-        createdAt = "", // Add proper timestamp if available
+        createdAt = "",
         updatedAt = null
     )
 }

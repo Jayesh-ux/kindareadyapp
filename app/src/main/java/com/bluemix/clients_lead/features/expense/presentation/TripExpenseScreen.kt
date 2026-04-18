@@ -356,7 +356,28 @@ fun TripExpenseSheet(
 
                 // TRANSPORT MODE SECTION
                 SectionCard(title = "Transport Mode") {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            TransportModeCard(
+                                icon = Icons.Default.DirectionsCar,
+                                label = "Car",
+                                isSelected = uiState.transportMode == TransportMode.CAR,
+                                onClick = { viewModel.updateTransportMode(TransportMode.CAR) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            TransportModeCard(
+                                icon = Icons.Default.LocalTaxi,
+                                label = "Taxi",
+                                isSelected = uiState.transportMode == TransportMode.TAXI,
+                                onClick = { viewModel.updateTransportMode(TransportMode.TAXI) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -390,9 +411,9 @@ fun TripExpenseSheet(
                             )
                             TransportModeCard(
                                 icon = Icons.Default.ElectricRickshaw,
-                                label = "Rickshaw",
-                                isSelected = uiState.transportMode == TransportMode.RICKSHAW,
-                                onClick = { viewModel.updateTransportMode(TransportMode.RICKSHAW) },
+                                label = "Auto",
+                                isSelected = uiState.transportMode == TransportMode.AUTO,
+                                onClick = { viewModel.updateTransportMode(TransportMode.AUTO) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
