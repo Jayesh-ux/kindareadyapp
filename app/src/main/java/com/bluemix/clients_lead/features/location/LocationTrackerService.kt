@@ -98,8 +98,8 @@ class LocationTrackerService : Service() {
             putString(PREF_CLIENT_ID, activeClientId)
             putString(PREF_CLIENT_NAME, activeClientName)
             putString(PREF_TRANSPORT_MODE, transportMode)
-            if (activeClientLat != null) putFloat(PREF_CLIENT_LAT, activeClientLat!!.toFloat()) else remove(PREF_CLIENT_LAT)
-            if (activeClientLng != null) putFloat(PREF_CLIENT_LNG, activeClientLng!!.toFloat()) else remove(PREF_CLIENT_LNG)
+            if (activeClientLat != null) putFloat(PREF_CLIENT_LAT, activeClientLat.toFloat()) else remove(PREF_CLIENT_LAT)
+            if (activeClientLng != null) putFloat(PREF_CLIENT_LNG, activeClientLng.toFloat()) else remove(PREF_CLIENT_LNG)
             apply()
         }
     }

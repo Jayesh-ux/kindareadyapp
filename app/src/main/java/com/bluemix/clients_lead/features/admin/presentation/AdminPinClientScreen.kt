@@ -93,7 +93,7 @@ fun AdminPinClientScreen(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Pin: ${clientBeingPinned!!.name}",
+                    text = "Pin: ${clientBeingPinned?.name ?: "Unknown"}",
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -121,14 +121,17 @@ fun AdminPinClientScreen(
                 Button(
                     onClick = {
                         val target = cameraPositionState.position.target
-                        viewModel.pinClientLocation(
-                            clientId = clientBeingPinned!!.id,
-                            clientName = clientBeingPinned!!.name,
-                            latitude = target.latitude,
-                            longitude = target.longitude
-                        )
-                        Toast.makeText(context, "✅ ${clientBeingPinned!!.name} pinned", Toast.LENGTH_SHORT).show()
-                        clientBeingPinned = null
+                        val client = clientBeingPinned
+                        if (client != null) {
+                            viewModel.pinClientLocation(
+                                clientId = client.id,
+                                clientName = client.name,
+                                latitude = target.latitude,
+                                longitude = target.longitude
+                            )
+                            Toast.makeText(context, "✅ ${client.name} pinned", Toast.LENGTH_SHORT).show()
+                            clientBeingPinned = null
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()

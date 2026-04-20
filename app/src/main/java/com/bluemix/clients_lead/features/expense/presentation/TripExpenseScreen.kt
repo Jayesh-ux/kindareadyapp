@@ -430,20 +430,18 @@ fun TripExpenseSheet(
                 ) {
                     SectionCard(title = "Route Preview") {
                         uiState.routePolyline?.let { polyline ->
-                            MiniRouteMap(
-                                routePolyline = polyline,
-                                startLocation = LatLng(
-                                    uiState.startLocation!!.latitude,
-                                    uiState.startLocation!!.longitude
-                                ),
-                                endLocation = LatLng(
-                                    uiState.endLocation!!.latitude,
-                                    uiState.endLocation!!.longitude
-                                ),
-                                distanceKm = uiState.distanceKm,
-                                durationMinutes = uiState.estimatedDuration,
-                                transportMode = uiState.transportMode.name
-                            )
+                            val start = uiState.startLocation
+                            val end = uiState.endLocation
+                            if (start != null && end != null) {
+                                MiniRouteMap(
+                                    routePolyline = polyline,
+                                    startLocation = LatLng(start.latitude, start.longitude),
+                                    endLocation = LatLng(end.latitude, end.longitude),
+                                    distanceKm = uiState.distanceKm,
+                                    durationMinutes = uiState.estimatedDuration,
+                                    transportMode = uiState.transportMode.name
+                                )
+                            }
                         }
                     }
                 }

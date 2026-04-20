@@ -217,7 +217,7 @@ class ActivityViewModel(
                 // If specific agent is selected, fetch logs for that agent
                 _uiState.value.selectedAgent != null -> {
                     Timber.d("FILTER_DEBUG", "Fetching logs for selected agent: ${_uiState.value.selectedAgent?.id}")
-                    getLocationLogsByDateRange(_uiState.value.selectedAgent!!.id, today, today, limit = pageSize, page = pageToLoad)
+                    getLocationLogsByDateRange(_uiState.value.selectedAgent?.id ?: userId, today, today, limit = pageSize, page = pageToLoad)
                 }
                 // If showAllAgents is enabled (admin wants all logs), use "all"
                 _uiState.value.showAllAgents && _uiState.value.isAdmin -> {

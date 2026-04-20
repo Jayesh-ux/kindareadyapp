@@ -550,7 +550,7 @@ class MapViewModel(
                     }
                     
                     // ✅ Calculate Stats
-                    val verifiedCount = filteredLogs.count { it.markActivity == "MEETING_END" && !it.markNotes.isNullOrBlank() && it.markNotes!!.contains("proof", ignoreCase = true) }
+                    val verifiedCount = filteredLogs.count { it.markActivity == "MEETING_END" && !it.markNotes.isNullOrBlank() && it.markNotes?.contains("proof", ignoreCase = true) == true }
                     
                     // ✅ Calculate Overdue Nearby (Admins only)
                     var overdueCount = 0

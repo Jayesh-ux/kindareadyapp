@@ -564,20 +564,18 @@ private fun LegEditor(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Route Preview", style = AppTheme.typography.body1, color = Color(0xFFB0B0B0))
                     leg.routePolyline?.let { polyline ->
-                        MiniRouteMap(
-                            routePolyline = polyline,
-                            startLocation = LatLng(
-                                leg.startLocation!!.latitude,
-                                leg.startLocation!!.longitude
-                            ),
-                            endLocation = LatLng(
-                                leg.endLocation!!.latitude,
-                                leg.endLocation!!.longitude
-                            ),
-                            distanceKm = leg.distanceKm,
-                            durationMinutes = leg.estimatedDuration,
-                            transportMode = leg.transportMode.name
-                        )
+                        val start = leg.startLocation
+                        val end = leg.endLocation
+                        if (start != null && end != null) {
+                            MiniRouteMap(
+                                routePolyline = polyline,
+                                startLocation = LatLng(start.latitude, start.longitude),
+                                endLocation = LatLng(end.latitude, end.longitude),
+                                distanceKm = leg.distanceKm,
+                                durationMinutes = leg.estimatedDuration,
+                                transportMode = leg.transportMode.name
+                            )
+                        }
                     }
                 }
             }
